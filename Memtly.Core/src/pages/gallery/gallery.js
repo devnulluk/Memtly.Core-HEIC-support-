@@ -12,7 +12,10 @@ import { bindCollectionSettingsButton, bindGallerySettingsButton } from '@pages/
 let resizeTimeout = null;
 let idleTimeout = null;
 
+let mediaViewer = null;
 let slideshow = null;
+
+let isPageLoading = false;
 
 function init() {
     const slideshowSlideInterval = $('input#slideshowSlideInterval').val();
@@ -23,7 +26,9 @@ function init() {
     slideshow = new Slideshow('#gallery-slideshow', slideshowSlideInterval, slideshowFadeInterval);
     slideshow.init();
 
-    new MediaViewer().init();
+    mediaViewer = new MediaViewer();
+    mediaViewer.init();
+
     initSettings();
     bindEventHandlers();
 }
@@ -324,17 +329,86 @@ function setIdleRefresh(duration) {
     }, duration);
 }
 
-export function refreshGalleryPage(callback) {
+export function loadGalleryPage(page, append, callback) {
+    if (isPageLoading) {
+        return;
+    }
+
+    page = page !== undefined ? page : 1;
+    append = append !== undefined ? append : false;
+    isPageLoading = true;
+
     $.ajax({
         type: 'GET',
-        url: `${window.location.pathname}${window.location.search}&partial=true`,
+        url: `${window.location.pathname}${window.location.search}&page=${page}&partial=true&pagination=${append}`,
         success: (data) => {
-            $('#main-gallery').html(data);
+            if (append) {
+                $('.gallery-container-wrapper').append(data);
+
+                ['pending', 'approved'].forEach((type) => {
+                    console.log(`Checking: .gallery-container-${type}`);
+
+                    $(`.gallery-container-wrapper .gallery-container-${type}:gt(0)`).addClass('d-none');
+
+                    $(`.gallery-container-wrapper .gallery-container-${type}`).each(function (galleryContainerIndex, galleryContainer) {
+                        console.log(`Gallery Container (${type}) Index: ${galleryContainerIndex}`);
+                        if (galleryContainerIndex > 0) {
+                            $(galleryContainer).find('.image-group').each(function (imageGroupIndex, imageGroup) {
+                                console.log(`Image Group (${type}) Index: ${imageGroupIndex}`);
+
+                                const key = $(imageGroup).data('key');
+                                console.log(`Image Group (${type}) Key: ${key}`);
+
+                                const originalGalleryContainer = $(`.gallery-container-wrapper .gallery-container-${type}:first`);
+                                const originalImageGroup = originalGalleryContainer.find(`.image-group-${key}`);
+                                if (originalImageGroup === undefined) {
+                                    console.log(`Adding new group`);
+                                    $(imageGroup).appendTo(originalGalleryContainer);
+                                } else {
+                                    console.log(`Appending to existing group`);
+                                    const originalImageGroupContainer = originalImageGroup.find(`.image-container`);
+                                    $(imageGroup).find('.image-tile').each(function (imageTileIndex, imageTile) {
+                                        console.log(`Image Tile (${type}) Index: ${imageTileIndex}`);
+                                        $(imageTile).appendTo(originalImageGroupContainer);
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    const itemCount = $(`.gallery-container-wrapper .gallery-container-${type}:first .image-tile`).length;
+                    if (itemCount > 0) {
+                        $(`.gallery-container-wrapper .gallery-container-${type}:first`).removeClass('d-none');
+                    } else {
+                        $(`.gallery-container-wrapper .gallery-container-${type}:first`).addClass('d-none');
+                    }
+
+                    $(`.gallery-container-wrapper .gallery-container-${type}:gt(0)`).remove();
+                });
+
+                $(`.gallery-container-wrapper .gallery-container .image-group`).each(function (index, el) {
+                    if ($(el).find('.image-tile').length == 0) {
+                        $(el).remove();
+                    }
+                });
+            } else {
+                $('#main-gallery').html(data);
+            }
+
+            mediaViewer.init();
+
             if (typeof callback === 'function') {
                 callback();
             }
+        },
+        complete: () => {
+            isPageLoading = false;
         }
     });
+}
+
+export function refreshGalleryPage(callback) {
+    loadGalleryPage(1, false, callback);
 }
 
 export default init;

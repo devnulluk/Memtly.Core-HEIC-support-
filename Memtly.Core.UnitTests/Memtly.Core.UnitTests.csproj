@@ -6,19 +6,12 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <SixLaborsLicenseFile>sixlabors.lic</SixLaborsLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="sixlabors.lic">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="MySql.Data" Version="9.7.0" />
-    <PackageReference Include="NSubstitute" Version="6.0.0" />
+    <PackageReference Include="NSubstitute" Version="6.2.0" />
     <PackageReference Include="NUnit" Version="3.13.3" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.2.1" />
     <PackageReference Include="NUnit.Analyzers" Version="3.6.1" />
@@ -26,7 +19,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="SixLabors.ImageSharp" Version="4.0.0" />
+    <PackageReference Include="SkiaSharp" Version="4.151.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,3 +1,13 @@
 ﻿@{
     Layout = "_Layout";
+
+    try
+    {
+        var deviceType = (await _deviceDetector.ParseDeviceType(Context.Request.Headers["User-Agent"].ToString())).ToString();
+        ViewBag.IsMobile = !string.Equals("Desktop", deviceType, StringComparison.OrdinalIgnoreCase);
+    }
+    catch
+    {
+        ViewBag.IsMobile = false;
+    }
 }

@@ -1,12 +1,12 @@
 ﻿using System.Reflection;
 using Memtly.Core.Constants;
+using Memtly.Core.EntityFramework.Models;
 using Memtly.Core.Enums;
 using Memtly.Core.Helpers;
 using Memtly.Core.Helpers.Database;
 using Memtly.Core.Models.Database;
+using Microsoft.Extensions.Localization;
 using NCrontab;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 
 namespace Memtly.Core.BackgroundWorkers
 {
@@ -96,7 +96,8 @@ namespace Memtly.Core.BackgroundWorkers
                         using (var scope = _scopeFactory.CreateScope())
                         {
                             var db = scope.ServiceProvider.GetRequiredService<IDatabaseHelper>();
-                                                        
+                            var localizer = scope.ServiceProvider.GetRequiredService<IStringLocalizer<Localization.Translations>>();
+
                             var systemUser = await db.GetUserByUsername(UserAccounts.SystemUser);
 
                             foreach (var galleryDir in galleryDirs)
@@ -170,27 +171,24 @@ namespace Memtly.Core.BackgroundWorkers
                                                                 await _auditHelper.LogAction($"Directory scanner added new approved item '{filename}' to gallery '{identifier}'", AuditSeverity.Verbose);
                                                             }
 
-                                                            var thumbnailDir = Path.Combine(thumbnailsDirectory, galleryItem.Identifier);
-                                                            var thumbnailPath = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(file)}.webp");
-                                                            if (!_fileHelper.FileExists(thumbnailPath))
+                                                            var imageOrientation = ImageOrientation.Unknown;
+                                                            try
                                                             {
-                                                                _fileHelper.CreateDirectoryIfNotExists(thumbnailDir);
-                                                                await _imageHelper.GenerateThumbnail(file, thumbnailPath, _settingsHelper.GetOrDefault(MemtlyConfiguration.Basic.ThumbnailSize, 720).Result);
-                                                                _fileHelper.DeleteFileIfExists(Path.Combine(thumbnailsDirectory, $"{Path.GetFileNameWithoutExtension(file)}.webp"));
-                                                            }
-                                                            else
-                                                            {
-                                                                using (var img = await Image.LoadAsync(thumbnailPath))
+                                                                var thumbnailDir = Path.Combine(thumbnailsDirectory, galleryItem.Identifier);
+                                                                var thumbnailPath = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(file)}.webp");
+                                                                if (!_fileHelper.FileExists(thumbnailPath))
                                                                 {
-                                                                    var width = img.Width;
-
-                                                                    img.Mutate(x => x.AutoOrient());
-
-                                                                    if (width != img.Width)
-                                                                    {
-                                                                        await img.SaveAsWebpAsync(thumbnailPath);
-                                                                    }
+                                                                    _fileHelper.CreateDirectoryIfNotExists(thumbnailDir);
+                                                                    var thumbnailSize = await _settingsHelper.GetOrDefault(MemtlyConfiguration.Gallery.Thumbnails.Size, 720, galleryItem!.Id);
+                                                                    await _imageHelper.GenerateThumbnail(file, thumbnailPath, thumbnailSize);
+                                                                    _fileHelper.DeleteFileIfExists(Path.Combine(thumbnailsDirectory, $"{Path.GetFileNameWithoutExtension(file)}.webp"));
+                                                                    
+                                                                    imageOrientation = _imageHelper.GetOrientation(thumbnailPath);
                                                                 }
+                                                            }
+                                                            catch (Exception ex)
+                                                            {
+                                                                _logger.LogWarning(ex, $"{localizer["Failed_To_Generate_Thumbnail"].Value} - '{file}' - {ex?.Message}");
                                                             }
 
                                                             if (g != null)
@@ -205,7 +203,7 @@ namespace Memtly.Core.BackgroundWorkers
 
                                                                 if (g.Orientation == ImageOrientation.Unknown)
                                                                 {
-                                                                    g.Orientation = await _imageHelper.GetOrientation(thumbnailPath);
+                                                                    g.Orientation = imageOrientation;
                                                                     updated = true;
                                                                 }
 
@@ -262,6 +260,23 @@ namespace Memtly.Core.BackgroundWorkers
                                                                     });
                                                                     await _auditHelper.LogAction($"Directory scanner added new pending item '{filename}' to gallery '{identifier}'", AuditSeverity.Verbose);
                                                                 }
+
+                                                                try
+                                                                {
+                                                                    var thumbnailDir = Path.Combine(thumbnailsDirectory, galleryItem.Identifier);
+                                                                    var thumbnailPath = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(file)}.webp");
+                                                                    if (!_fileHelper.FileExists(thumbnailPath))
+                                                                    {
+                                                                        _fileHelper.CreateDirectoryIfNotExists(thumbnailDir);
+                                                                        var thumbnailSize = await _settingsHelper.GetOrDefault(MemtlyConfiguration.Gallery.Thumbnails.Size, 720, galleryItem!.Id);
+                                                                        await _imageHelper.GenerateThumbnail(file, thumbnailPath, thumbnailSize);
+                                                                        _fileHelper.DeleteFileIfExists(Path.Combine(thumbnailsDirectory, $"{Path.GetFileNameWithoutExtension(file)}.webp"));
+                                                                    }
+                                                                }
+                                                                catch (Exception ex)
+                                                                {
+                                                                    _logger.LogWarning(ex, $"{localizer["Failed_To_Generate_Thumbnail"].Value} - '{file}' - {ex?.Message}");
+                                                                }
                                                             }
                                                             catch (Exception ex)
                                                             {
@@ -293,9 +308,14 @@ namespace Memtly.Core.BackgroundWorkers
         {
             try
             {
+                var rootDirectory = Path.GetDirectoryName(Assembly.GetEntryAssembly()!.Location)!;
+                var thumbnailsDirectory = Path.Combine(rootDirectory, Directories.Public.Thumbnails);
+                _fileHelper.CreateDirectoryIfNotExists(thumbnailsDirectory);
+
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var db = scope.ServiceProvider.GetRequiredService<IDatabaseHelper>();
+                    var localizer = scope.ServiceProvider.GetRequiredService<IStringLocalizer<Localization.Translations>>();
 
                     var systemUser = await db.GetUserByUsername(UserAccounts.SystemUser);
 
@@ -319,6 +339,21 @@ namespace Memtly.Core.BackgroundWorkers
                                     OwnerName = "DirectoryScanner"
                                 });
                                 await _auditHelper.LogAction($"Directory scanner added new custom resource '{filename}'", AuditSeverity.Verbose);
+                            }
+
+                            try
+                            {
+                                var thumbnailDir = Path.Combine(thumbnailsDirectory, SystemGalleries.CustomResources);
+                                var thumbnailPath = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(resource)}.webp");
+                                if (!_fileHelper.FileExists(thumbnailPath))
+                                {
+                                    _fileHelper.CreateDirectoryIfNotExists(thumbnailDir);
+                                    await _imageHelper.GenerateThumbnail(resource, thumbnailPath, 720);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, $"{localizer["Failed_To_Generate_Thumbnail"].Value} - '{resource}' - {ex?.Message}");
                             }
                         }
                         catch { }

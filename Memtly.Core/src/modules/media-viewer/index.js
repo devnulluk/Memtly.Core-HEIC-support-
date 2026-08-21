@@ -1,5 +1,6 @@
 import './media-viewer.css';
 import { displayLoader, hideLoader } from '@modules/loader';
+import { loadGalleryPage } from '@pages/gallery/gallery';
 
 class MediaViewer {
     constructor() {
@@ -8,37 +9,17 @@ class MediaViewer {
         this.touchStartPosX = null;
         this.touchStartPosY = null;
         this.lastSelected = null;
+        this.page = 1;
+        this.maxScroll = 0;
     }
 
     init() {
         clearTimeout(this.playButtonTimeout);
         this.playButtonTimeout = setTimeout(() => {
-            $('.media-viewer-item .media-viewer-play').each(function () {
-                const element = $(this);
-                const preview = element.parent();
-                let thumbnail = $(preview.find('img')[0]);
-
-                let adjustSizeFn = function () {
-                    let size = element.height();
-                    preview.css('height', `${thumbnail.outerHeight()}px`);
-
-                    element.css({
-                        'top': `-${(thumbnail.outerHeight() / 2)}px`,
-                        'left': `${(thumbnail.outerWidth() / 2)}px`,
-                        'margin-top': `-${size / 2}px`,
-                        'margin-left': `-${size / 2}px`
-                    });
-
-                    element.fadeTo(200, 1.0);
-                }
-
-                thumbnail.on('load', adjustSizeFn);
-                element.on('load', adjustSizeFn);
-
-                adjustSizeFn();
-            });
+            this.repositionPlayButton();
         }, 200);
 
+        this.setItemIndexes();
         this.setMultiSelectBtnStates();
         this.bindEventHandlers();
     }
@@ -49,6 +30,7 @@ class MediaViewer {
         this.bindMultiSelectButtons();
         this.bindRightClick();
         this.bindPopupEventHandlers();
+        this.bindPageEndEvent();
     }
 
     bindPopupEventHandlers() {
@@ -240,6 +222,28 @@ class MediaViewer {
         });
     }
 
+    bindPageEndEvent() {
+        const path = window.location.pathname.toLowerCase();
+        if (path.startsWith('/gallery')) {
+            const paginationStyle = $('.pagination').data('pagination-style');
+            if (paginationStyle !== undefined && paginationStyle === 'scrollloading') {
+                $('#main-wrapper').off('scroll').on('scroll', (e) => {
+                    const el = e.currentTarget;
+                    const wrapperHeight = $(el).outerHeight();
+                    const diff = el.scrollHeight - el.scrollTop - el.clientHeight;
+
+                    if (diff < 200 && el.scrollHeight > this.maxScroll) {
+                        this.maxScroll = el.scrollHeight;
+                        const nextPage = this.page + 1;
+                        loadGalleryPage(nextPage, true, () => {
+                            this.page = nextPage;
+                        });
+                    }
+                });
+            }
+        }
+    }
+
     openMediaViewer(e) {
         let id = $(e).data('media-viewer-id');
         let index = $(e).data('media-viewer-index');
@@ -386,17 +390,18 @@ class MediaViewer {
 
     moveSlide(direction) {
         let viewer = $('.media-viewer .media-viewer-content').closest('.media-viewer');
-        let index = viewer.data('media-viewer-index') + direction;
+        let currentIndex = viewer.data('media-viewer-index');
+        let nextIndex = currentIndex + direction;
         let collection = viewer.data('media-viewer-collection');
         let items = $(`a[data-media-viewer-collection='${collection}']`);
 
-        if (index < 0) {
-            index = items.length - 1;
-        } else if (index >= items.length) {
-            index = 0;
+        if (nextIndex < 0) {
+            nextIndex = items.length - 1;
+        } else if (nextIndex >= items.length) {
+            nextIndex = 0;
         }
 
-        let slide = $(`a[data-media-viewer-index='${index}']`);
+        let slide = $(`a[data-media-viewer-index='${nextIndex}']`);
 
         this.openMediaViewer(slide);
     }
@@ -447,6 +452,46 @@ class MediaViewer {
             $('.btn-multi-deselect-all').removeClass('d-none').addClass('link-primary-2');
             $('.btn-bulk-delete-resources').removeClass('btn-faded').addClass('link-danger');
         }
+    }
+
+    setItemIndexes() {
+        $('.image-container').each(function () {
+            $(this).find('.media-viewer-item').each(function (index, item) {
+                $(item).attr('data-media-viewer-index', index);
+            });
+        });
+    }
+
+    repositionPlayButton() {
+        $('.media-viewer-item .media-viewer-play').each(function () {
+            const element = $(this);
+            const preview = element.parent();
+            let thumbnail = $(preview.find('img')[0]);
+
+            let adjustSizeFn = function () {
+                const playButtonWidth = element.width();
+                const playButtonHeight = element.height();
+
+                const thumbnailWidth = thumbnail.outerWidth();
+                const thumbnailHeight = thumbnail.outerHeight();
+
+                preview.css('height', `${thumbnailHeight}px`);
+
+                element.css({
+                    'top': `-${(thumbnailHeight / 2)}px`,
+                    'left': `${(thumbnailWidth / 2)}px`,
+                    'margin-top': `-${playButtonHeight / 2}px`,
+                    'margin-left': `-${playButtonWidth / 2}px`
+                });
+
+                element.fadeTo(200, 1.0);
+            }
+
+            thumbnail.on('load', adjustSizeFn);
+            element.on('load', adjustSizeFn);
+
+            adjustSizeFn();
+        });
     }
 }
 

@@ -1,0 +1,37 @@
+﻿@model IDictionary<string, string>?
+@using Memtly.Core.Constants
+
+@if (Model != null && Model.Any())
+{
+    <div class="setting-section">
+        <h5 class="mb-3">@_localizer["Thumbnails"].Value</h5>
+
+        <div class="row mb-4 mb-lg-4 setting-container">
+            <div class="col-12">
+                <label class="setting-label">@_localizer["Settings_Basic_ThumbnailSize_Label"].Value</label>
+                <input class="setting-field form-control" data-setting-name="@MemtlyConfiguration.Gallery.Thumbnails.Size" placeholder="720" value="@Model.GetValue(MemtlyConfiguration.Gallery.Thumbnails.Size.ToUpper(), "720")" type="number" min="100" step="50" />
+                <div class="setting-hint form-text">@_localizer["Settings_Basic_ThumbnailSize_Help"].Value</div>
+            </div>
+        </div>
+
+        <div class="row mb-4 mb-lg-4 setting-container">
+            <div class="col-12">
+                <label class="setting-label">@_localizer["Settings_Gallery_ThumbnailStyle_Label"].Value</label>
+                <select class="setting-field form-control" data-setting-name="@MemtlyConfiguration.Gallery.Thumbnails.Style">
+                    @foreach (var option in ViewOptions.ThumbnailStyleOption)
+                    {
+                        if (Model.GetValue(MemtlyConfiguration.Gallery.Thumbnails.Style.ToUpper(), ((int)ThumbnailStyle.Tile).ToString()).Equals(option.Value, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <option value="@option.Value" selected="selected">@option.Key</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@option.Key</option>
+                        }
+                    }
+                </select>
+                <div class="setting-hint form-text">@_localizer["Settings_Gallery_ThumbnailStyle_Help"].Value</div>
+            </div>
+        </div>
+    </div>
+}

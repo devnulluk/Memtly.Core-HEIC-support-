@@ -82,7 +82,8 @@ namespace Memtly.Core.UnitTests.Tests.Helpers
             _settings.GetOrDefault(MemtlyConfiguration.Gallery.DefaultView, Arg.Any<int>(), Arg.Any<int>()).Returns((int)ViewMode.Default);
             _settings.GetOrDefault(MemtlyConfiguration.Gallery.AllowedFileTypes, Arg.Any<string>(), Arg.Any<int>()).Returns(".jpg,.jpeg,.png,.mp4,.mov");
             _settings.GetOrDefault(MemtlyConfiguration.Gallery.RequireReview, Arg.Any<bool>(), Arg.Any<int>()).Returns(true);
-            _settings.GetOrDefault(MemtlyConfiguration.Gallery.MaxFileSizeMB, Arg.Any<int>(), Arg.Any<int>()).Returns(10);
+            _settings.GetOrDefault(MemtlyConfiguration.Gallery.MaxSizeMB, Arg.Any<long>(), Arg.Any<int>()).Returns(1024);
+            _settings.GetOrDefault(MemtlyConfiguration.Gallery.MaxFileSizeMB, Arg.Any<long>(), Arg.Any<int>()).Returns(10);
             _settings.GetOrDefault(MemtlyConfiguration.Gallery.ShowPendingUploads, Arg.Any<bool>(), Arg.Any<int>()).Returns(false);
 
             _file.GetChecksum(Arg.Any<string>()).Returns(Guid.NewGuid().ToString());
@@ -714,196 +715,251 @@ namespace Memtly.Core.UnitTests.Tests.Helpers
             Assert.That(model.Images.Count, Is.EqualTo(expectedItemCount));
         }
 
-        [TestCase(true, 1, null, false)]
-        [TestCase(true, 3, "Bob", false)]
-        [TestCase(false, 1, "", false)]
-        [TestCase(false, 3, "Unit Testing", false)]
-        [TestCase(false, 1, "Logged In", true)]
-        public async Task GalleryController_UploadImage(bool requiresReview, int fileCount, string? uploadedBy, bool loggedIn)
+        [TestCase(true, null, false)]
+        [TestCase(true, "Bob", false)]
+        [TestCase(false, "", false)]
+        [TestCase(false, "Unit Testing", false)]
+        [TestCase(false, "Logged In", true)]
+        public async Task GalleryController_UploadFileChunk(bool requiresReview, string? uploadedBy, bool loggedIn)
         {
             _database.GetUser(Arg.Any<int>()).Returns(loggedIn ? new UserModel() { Firstname = "Logged", Lastname = "In" } : null);
             _settings.GetOrDefault(MemtlyConfiguration.Gallery.RequireReview, Arg.Any<bool>()).Returns(requiresReview);
-
-            var files = new FormFileCollection();
-            for (var i = 0; i < fileCount; i++)
-            {
-                files.Add(new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"));
-            }
+            _file.FileExists(Arg.Any<string>()).Returns(true);
 
             var session = new MockSession();
             session.Set(SessionKey.Viewer.Identity, uploadedBy ?? string.Empty);
 
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(
-                session: session,
-                form: new Dictionary<string, StringValues>
-                {
-                    { "CollectionId", "0" },
-                    { "GalleryId", "1" },
-                    { "SecretKey", "password" }
-                },
-                files: files);
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = "password",
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.True);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(files.Count));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploadedBy", string.Empty), Is.EqualTo(!string.IsNullOrWhiteSpace(uploadedBy) ? uploadedBy : string.Empty));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.EqualTo(0));
+            Assert.That(string.IsNullOrWhiteSpace(JsonResponseHelper.GetPropertyValue(actual.Value, "RequestId", string.Empty)), Is.False);
+            Assert.That(string.IsNullOrWhiteSpace(JsonResponseHelper.GetPropertyValue(actual.Value, "UploadId", string.Empty)), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.True);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.True);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.EqualTo(0));
         }
 
         [TestCase]
-        public async Task GalleryController_UploadImage_Duplicate()
+        public async Task GalleryController_UploadFileChunk_Duplicate()
         {
             _database.GetUser(Arg.Any<int>()).Returns(new UserModel());
             _database.GetGalleryItemByChecksum(Arg.Any<int>(), Arg.Any<string>()).Returns(Task.FromResult(MockData.MockGalleryItems(1, 1, GalleryItemState.Approved).FirstOrDefault()));
-
-            var files = new FormFileCollection();
-            files.Add(new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"));
 
             var session = new MockSession();
             session.Set(SessionKey.Viewer.Identity, string.Empty);
 
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(
-                session: session,
-                form: new Dictionary<string, StringValues>
-                {
-                    { "CollectionId", "0" },
-                    { "GalleryId", "1" },
-                    { "SecretKey", "password" }
-                },
-                files: files);
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = "password",
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
+        }
+
+        [TestCase(100)]
+        [TestCase(1000)]
+        public async Task GalleryController_UploadFileChunk_InvalidGallery(int id)
+        {
+            var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
+
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = id,
+                SecretKey = "password",
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
+            Assert.That(actual, Is.TypeOf<JsonResult>());
+            Assert.That(actual?.Value, Is.Not.Null);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
         [TestCase(null)]
         [TestCase("")]
-        public async Task GalleryController_UploadImage_InvalidGallery(string? id)
+        public async Task GalleryController_UploadFileChunk_InvalidSecretKey(string? key)
         {
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(form: new Dictionary<string, StringValues>
-            {
-                { "CollectionId", "0" },
-                { "GalleryId", "1" },
-            });
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = key,
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
-        [TestCase(null)]
-        [TestCase("")]
-        public async Task GalleryController_UploadImage_InvalidSecretKey(string? key)
+        [TestCase(100, 1)]
+        [TestCase(1, 100)]
+        [TestCase(100, 100)]
+        public async Task GalleryController_UploadFileChunk_MissingGalleryOrCollection(int collectionId, int galleryId)
         {
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(form: new Dictionary<string, StringValues>
-            {
-                { "CollectionId", "0" },
-                { "GalleryId", "1" },
-                { "SecretKey", key }
-            });
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = collectionId,
+                GalleryId = galleryId,
+                SecretKey = "password",
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
         [TestCase()]
-        public async Task GalleryController_UploadImage_MissingGallery()
+        public async Task GalleryController_UploadFileChunk_NoFiles()
         {
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(form: new Dictionary<string, StringValues>
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
+
+            var request = new MediaUploadRequest()
             {
-                { "CollectionId", Guid.NewGuid().ToString() },
-                { "GalleryId", "1" }
-            });
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = "password",
+                File = null,
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
         [TestCase()]
-        public async Task GalleryController_UploadImage_NoFiles()
+        public async Task GalleryController_UploadFileChunk_FileTooBig()
         {
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(form: new Dictionary<string, StringValues>
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
+
+            var request = new MediaUploadRequest()
             {
-                { "CollectionId", "0" },
-                { "GalleryId", "1" },
-                { "SecretKey", "password" }
-            });
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = "password",
+                File = new FormFile(null, 0, int.MaxValue, "TestFile_001", $"{Guid.NewGuid()}.jpg"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
         [TestCase()]
-        public async Task GalleryController_UploadImage_FileTooBig()
+        public async Task GalleryController_UploadFileChunk_InvalidFileType()
         {
             var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(
-                form: new Dictionary<string, StringValues>
-                {
-                    { "CollectionId", "0" },
-                    { "GalleryId", "1" },
-                    { "SecretKey", "password" }
-                },
-                files: new FormFileCollection() {
-                    new FormFile(null, 0, int.MaxValue, "TestFile_001", $"{Guid.NewGuid()}.jpg")
-                });
+            controller.ControllerContext.HttpContext = MockData.MockHttpContext();
 
-            JsonResult actual = (JsonResult)await controller.UploadImage();
+            var request = new MediaUploadRequest()
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                UploadId = Guid.NewGuid().ToString(),
+                CollectionId = 0,
+                GalleryId = 1,
+                SecretKey = "password",
+                File = new FormFile(null, 0, 0, "TestFile_001", $"{Guid.NewGuid()}.blaa"),
+                FileSize = 10,
+                FileChecksum = Guid.NewGuid().ToString(),
+                ChunkIndex = 0,
+                TotalChunks = 1
+            };
+
+            JsonResult actual = (JsonResult)await controller.UploadFileChunk(request);
             Assert.That(actual, Is.TypeOf<JsonResult>());
             Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
-        }
-
-        [TestCase()]
-        public async Task GalleryController_UploadImage_InvalidFileType()
-        {
-            var controller = new GalleryController(_settings, _database, _file, _deviceDetector, _image, _notification, _encryption, _url, _identity, _logger, _localizer);
-            controller.ControllerContext.HttpContext = MockData.MockHttpContext(
-                form: new Dictionary<string, StringValues>
-                {
-                    { "CollectionId", "0" },
-                    { "GalleryId", "1" },
-                    { "SecretKey", "password" }
-                },
-                files: new FormFileCollection() {
-                    new FormFile(null, 0, int.MaxValue, "TestFile_001", $"{Guid.NewGuid()}.blaa")
-                });
-
-            JsonResult actual = (JsonResult)await controller.UploadImage();
-            Assert.That(actual, Is.TypeOf<JsonResult>());
-            Assert.That(actual?.Value, Is.Not.Null);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "success", false), Is.False);
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "uploaded", 0), Is.EqualTo(0));
-            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "errors", new List<string>()).Count, Is.GreaterThan(0));
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Success", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Complete", false), Is.False);
+            Assert.That(JsonResponseHelper.GetPropertyValue(actual.Value, "Errors", new List<string>()).Count, Is.GreaterThan(0));
         }
 
         private IDictionary<string, GalleryModel> GetMockGalleryData()

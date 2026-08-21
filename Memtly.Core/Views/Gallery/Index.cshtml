@@ -65,7 +65,7 @@
                     <p class="small my-2">@(ViewBag.IsMobile ?? false ? _localizer["Click_To_Upload"].Value : _localizer["Drag_And_Drop"].Value)</p>
                     <p class="small my-2">(@string.Join(", ", allowedFileTypes).ToLower())</p>
 
-                    <input class="position-absolute invisible upload-input" data-post-collection-id="@(Model!.Gallery.Type == GalleryType.Collection ? Model.Gallery.Id : 0)" data-post-gallery-id="@(Model!.Gallery.Type != GalleryType.Collection ? Model.Gallery.Id : 0)" data-post-url="/Gallery/UploadImage" data-post-key="@Model?.SecretKey" data-post-allow-camera="@(((ViewBag.IsMobile ?? false) && await _settings.GetOrDefault(MemtlyConfiguration.Gallery.CameraUploads, false)).ToString().ToLower())" type="file" multiple accept="image/*,video/*" />
+                    <input class="position-absolute invisible upload-input" data-post-collection-id="@(Model!.Gallery.Type == GalleryType.Collection ? Model.Gallery.Id : 0)" data-post-gallery-id="@(Model!.Gallery.Type != GalleryType.Collection ? Model.Gallery.Id : 0)" data-post-key="@Model?.SecretKey" data-post-allow-camera="@(((ViewBag.IsMobile ?? false) && await _settings.GetOrDefault(MemtlyConfiguration.Gallery.CameraUploads, false)).ToString().ToLower())" type="file" multiple accept="image/*,video/*" />
                 </fieldset>
             </form>
         </div>

@@ -281,6 +281,7 @@ namespace Memtly.Core.Configurations
         private static async Task MigrateSettings(IDatabaseHelper database, ILogger logger)
         {
             await MigrateThemeSettings(database, logger);
+            await MigrateThumbnailSettings(database, logger);
         }
 
         private static async Task MigrateThemeSettings(IDatabaseHelper database, ILogger logger)
@@ -437,6 +438,32 @@ namespace Memtly.Core.Configurations
             catch (Exception ex)
             {
                 logger.LogError($"Failed to migrate '${MemtlyConfiguration.Themes.ColourOverrides.BaseKey}' settings at startup - {ex?.Message}", ex);
+            }
+        }
+
+        private static async Task MigrateThumbnailSettings(IDatabaseHelper database, ILogger logger)
+        {
+            try
+            {
+                var oldKey = $"{MemtlyConfiguration.Basic.BaseKey}Thumbnail_Size";
+                var newKey = MemtlyConfiguration.Gallery.Thumbnails.Size;
+                var setting = await database.GetSetting(oldKey);
+                if (setting != null && !string.IsNullOrWhiteSpace(setting.Value))
+                {
+                    await database.SetSetting(new SettingModel()
+                    {
+                        Id = newKey,
+                        Value = setting.Value
+                    });
+                    await database.DeleteSetting(new SettingModel()
+                    {
+                        Id = oldKey
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Failed to migrate '${MemtlyConfiguration.Gallery.Thumbnails.Size}' settings at startup - {ex?.Message}", ex);
             }
         }
         #endregion

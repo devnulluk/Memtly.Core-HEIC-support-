@@ -4,8 +4,12 @@ import { displayLoader, hideLoader } from '@modules/loader';
 import MediaViewer from '@modules/media-viewer';
 import { getQueryParam } from '@utilities/urls';
 
+let mediaViewer = null;
+
 function init() {
-    new MediaViewer().init();
+    mediaViewer = new MediaViewer();
+    mediaViewer.init();
+
     bindEventHandlers();
 }
 
@@ -249,6 +253,7 @@ export function updateCustomResources() {
         success: function (data) {
             $('#custom-resources').html(data);
             bindEventHandlers();
+            mediaViewer.init();
 
             const url = new URL(window.location.href);
             url.searchParams.set('term', term);

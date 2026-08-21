@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
-    <SixLaborsLicenseFile>sixlabors.lic</SixLaborsLicenseFile>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -46,13 +45,21 @@
   <ItemGroup>
     <Content Remove="Resources\Templates\Basic.cshtml" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <None Remove="Assets\BrokenImage.webp" />
+    <None Remove="Assets\BrokenVideo.webp" />
+  </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\DemoImage.png">
+    <Content Include="Assets\BrokenImage.webp">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="sixlabors.lic">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    <Content Include="Assets\BrokenVideo.webp">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\DemoImage.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="src\css\main.css" />
     <Content Include="src\css\site.css" />
@@ -89,6 +96,7 @@
     <Content Include="src\modules\sponsors\sponsors.css" />
     <Content Include="src\modules\slideshow\index.js" />
     <Content Include="src\modules\upload-box\index.js" />
+    <Content Include="src\modules\utilities\files.js" />
     <Content Include="src\modules\validation\password-validation\index.js" />
     <Content Include="src\pages\account\admin-panel.js" />
     <Content Include="src\pages\account\forgot-password.js" />
@@ -127,7 +135,7 @@
 
   <ItemGroup>
     <PackageReference Include="MailKit" Version="4.17.0" />
-    <PackageReference Include="Memtly.Localization" Version="1.0.5.6" />
+    <PackageReference Include="Memtly.Localization" Version="1.0.5.11" />
     <PackageReference Include="MetadataExtractor" Version="2.9.3" />
     <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.18" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.18" />
@@ -152,7 +160,10 @@
     <PackageReference Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Sinks.Graylog" Version="3.1.1" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="4.0.0" />
+    <PackageReference Include="SkiaSharp" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.151.1" />
     <PackageReference Include="TwoFactorAuth.Net" Version="1.4.0" />
     <PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
     <PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.2" />
@@ -174,5 +185,15 @@
 
   <ItemGroup>
     <Resource Include="Resources\Templates\Email\Basic.cshtml" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Content Update="wwwroot\images\BrokenImage.webp">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\images\BrokenVideo.webp">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

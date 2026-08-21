@@ -141,7 +141,7 @@ tr td {
     }
 
 .pending-approval, .custom-resource {
-    display: inline-block;
+    display: grid;
 }
 
     .pending-approval .btn-group .btn, .custom-resource .btn-group .btn {
@@ -161,39 +161,72 @@ tr td {
             border-radius: 0px 0px 5px 0px;
         }
 
-.review-tile {
-    height: 200px;
-    width: 100%;
-    object-fit: contain;
+.image-container {
+    display: grid;
+    grid-auto-flow: dense;
+    grid-template-columns: repeat(var(--cols), 1fr);
+    grid-gap: 5px;
 }
 
-.image-tile {
-    position: relative;
-    display: block;
-    border-radius: 5px;
-    overflow: hidden;
-}
-
-    .image-tile a {
-        display: block;
+    .image-container .image-tile {
+        display: grid;
+        border: 1px solid #EFEFEF;
+        border-radius: 5px;
+        position: relative;
         overflow: hidden;
     }
 
-        .image-tile a img {
-            display: inline-block;
+        .image-container .image-tile.image-tile-landscape {
+            grid-row-end: span 1;
+            grid-column-end: span 2;
         }
 
-    .image-tile .btn {
-        height: 40px;
-        position: relative;
-        top: -40px;
-        margin-bottom: -40px;
-        border-radius: 0px;
-        display: none;
+        .image-container .image-tile.image-tile-portrait {
+            grid-row-end: span 1;
+            grid-column-end: span 1;
+        }
+
+        .image-container .image-tile.image-tile-square {
+            grid-row-end: span 1;
+            grid-column-end: span 2;
+        }
+
+        .image-container .image-tile.image-tile-unknown {
+            grid-row-end: span 1;
+            grid-column-end: span 1;
+        }
+
+        .image-container .image-tile a {
+            display: grid;
+        }
+
+            .image-container .image-tile a img {
+                width: 100%;
+                height: 100%;
+                min-height: 250px;
+                max-height: 250px;
+                object-fit: cover;
+            }
+
+.image-container-letterbox .image-tile {
+    grid-row-end: span 1 !important;
+    grid-column-end: span 1 !important;
+}
+
+    .image-container-letterbox .image-tile a img {
+        min-height: unset !important;
+        max-height: unset !important;
+        aspect-ratio: 16 / 9 !important;
     }
 
-    .image-tile:hover .btn {
-        display: block;
+.image-container-single .image-tile {
+    grid-row-end: span 1 !important;
+    grid-column-end: span 1 !important;
+    border-radius: 8px !important;
+}
+
+    .image-container-single .image-tile a img {
+        max-height: unset;
     }
 
 .slideshow {
@@ -254,9 +287,9 @@ tr td {
     bottom: 0px;
 }
 
-.display-7 .header-actions .action span {
-    margin: 0px 0px 0px;
-}
+    .display-7 .header-actions .action span {
+        margin: 0px 0px 0px;
+    }
 
 .table-rounded-border {
     border-radius: 3px;
@@ -309,10 +342,10 @@ tr td {
     right: 10px;
 }
 
-    #btn-full-width-Memtly:hover {
-        background-color: #e64242;
-        cursor: pointer;
-    }
+#btn-full-width-Memtly:hover {
+    background-color: #e64242;
+    cursor: pointer;
+}
 
 .nav-horizontal-scroller {
     overflow-x: auto;

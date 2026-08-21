@@ -15,8 +15,11 @@ namespace Memtly.Core.Models
         public ViewMode ViewMode { get; set; } = ViewMode.Default;
         public GalleryGroup GroupBy { get; set; } = GalleryGroup.None;
         public GalleryOrder OrderBy { get; set; } = GalleryOrder.Descending;
+        public GalleryItemState FilterStateBy { get; set; } = GalleryItemState.All;
         public int ApprovedCount { get; set; } = 0;
         public int PendingCount { get; set; } = 0;
+        public int UserApprovedCount { get; set; } = 0;
+        public int UserPendingCount { get; set; } = 0;
         public int ItemsPerPage { get; set; } = 50;
         public int CurrentPage { get; set; } = 1;
         public bool Pagination { get; set; } = true;
@@ -49,6 +52,8 @@ namespace Memtly.Core.Models
         public DateTimeOffset? CaptureDate { get; set; }
         public string? ImagePath { get; set; }
         public string? ThumbnailPath { get; set; }
+        public string? FallbackImagePath { get; set; }
+        public ImageOrientation Orientation { get; set; }
         public MediaType MediaType { get; set; }
         public GalleryItemState State { get; set; }
     }
