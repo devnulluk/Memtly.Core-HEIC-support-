@@ -28,8 +28,8 @@ namespace Memtly.Core.Helpers.Database
         #endregion
 
         #region Gallery Items
-        Task<IDictionary<string, int>> GetCollectionItemCount(int? collectionId, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All);
-        Task<IDictionary<string, int>> GetGalleryItemCount(int? galleryId, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All);
+        Task<IDictionary<string, int>> GetCollectionItemCount(int? userId = null, int? collectionId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All);
+        Task<IDictionary<string, int>> GetGalleryItemCount(int? userId = null, int? galleryId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All);
         Task<GalleryItemModel?> GetGalleryItem(int id);
         Task<GalleryItemModel?> GetGalleryItemByChecksum(int galleryId, string checksum);
         Task<List<GalleryItemModel>> GetCollectionItems(int? userId = null, int? collectionId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All, GalleryGroup group = GalleryGroup.None, GalleryOrder order = GalleryOrder.Descending, int page = 1, int limit = int.MaxValue);

@@ -3,11 +3,13 @@ import { displayPopup, hidePopup } from '@modules/popups';
 import { displayLoader, hideLoader } from '@modules/loader';
 import { displayIdentityCheck } from '@modules/identity-check';
 import { refreshGalleryPage } from '@pages/gallery/gallery';
+import { getFileChecksum } from '@utilities/files';
 
 class UploadBox {
     constructor() {
         this.maxRetries = 5;
         this.retryDelay = 2000;
+        this.chunk_size = 10 * 1024 * 1024;
     }
 
     init() {
@@ -276,21 +278,12 @@ class UploadBox {
         const token = $('form.file-uploader-form input[name=\'__RequestVerificationToken\']').val();
         const collectionId = dataRefs.input.getAttribute('data-post-collection-id');
         const galleryId = dataRefs.input.getAttribute('data-post-gallery-id');
-        const url = dataRefs.input.getAttribute('data-post-url');
         const secretKey = dataRefs.input.getAttribute('data-post-key');
 
         if (!galleryId) {
             displayMessage(
                 localization.translate('Upload'),
                 localization.translate('Upload_Invalid_Gallery_Detected')
-            );
-            return;
-        }
-
-        if (!url) {
-            displayMessage(
-                localization.translate('Upload'),
-                localization.translate('Upload_Invalid_Upload_Url')
             );
             return;
         }
@@ -310,117 +303,38 @@ class UploadBox {
         let requiresReview = true;
         let errors = [];
 
-        const processFileUpload = (i, retries = 0) => {
-            if (i < dataRefs.files.length) {
-                const formData = new FormData();
-                formData.append('__RequestVerificationToken', token);
-                formData.append('CollectionId', collectionId);
-                formData.append('GalleryId', galleryId);
-                formData.append('SecretKey', secretKey);
-                formData.append(dataRefs.files[i].name, dataRefs.files[i]);
-
-                displayLoader(
-                    `${localization.translate('Upload_Progress')} ${i + 1}/${dataRefs.files.length}...<br/><br/><span id="file-upload-progress">0%</span>`
-                );
-
-                $.ajax({
-                    url: url,
-                    type: 'POST',
-                    data: formData,
-                    async: true,
-                    cache: false,
-                    contentType: false,
-                    dataType: 'json',
-                    processData: false,
-                    success: (response) => {
-                        if (response?.success === true) {
-                            requiresReview = response.requiresReview;
-                            uploadedCount++;
-                        } else if (response?.errors?.length > 0) {
-                            errors.push(response.errors);
-                        }
-                        processFileUpload(i + 1);
-                    },
-                    xhr: () => {
-                        const xhr = new window.XMLHttpRequest();
-
-                        xhr.upload.addEventListener("progress", (evt) => {
-                            if (evt.lengthComputable) {
-                                const percentComplete = Math.floor((evt.loaded / evt.total) * 100);
-                                const progressElement = $('span#file-upload-progress');
-                                if (progressElement.length > 0) {
-                                    progressElement.text(`(${percentComplete}%)`);
-                                }
-                            }
-                        }, false);
-
-                        xhr.upload.addEventListener("error", (evt) => {
-                            console.error(evt);
-                            if (retries < this.maxRetries) {
-                                setTimeout(() => {
-                                    processFileUpload(i, retries + 1);
-                                }, this.retryDelay);
-                            } else {
-                                displayMessage(
-                                    localization.translate('Upload'),
-                                    localization.translate('Upload_Failed'),
-                                    errors
-                                );
-                            }
-                        }, false);
-
-                        return xhr;
-                    },
-                });
+        const processFileUpload = async (requestId, fileIndex) => {
+            if (fileIndex < dataRefs.files.length) {
+                const uploadId = crypto.randomUUID();
+                displayLoader(`${localization.translate('Upload_Progress')} ${fileIndex + 1}/${dataRefs.files.length}...<br/><br/><span id="file-upload-progress">0%</span>`);
+                await processFileChunk(requestId, fileIndex, uploadId, 0);
             } else {
-                this.handleUploadComplete(uploadedCount, requiresReview, errors, collectionId, galleryId, secretKey, dataRefs);
+                handleUploadComplete(requestId);
             }
         };
 
-        processFileUpload(0);
-    }
+        const processFileChunk = async (requestId, fileIndex, uploadId, chunkId, currentAttempt = 0) => {
+            const start = chunkId * this.chunk_size;
+            const end = Math.min(start + this.chunk_size, dataRefs.files[fileIndex].size);
+            const chunk = dataRefs.files[fileIndex].slice(start, end);
+            const totalChunks = Math.ceil(dataRefs.files[fileIndex].size / this.chunk_size);
+            const checksum = await getFileChecksum(dataRefs.files[fileIndex]);
 
-    handleUploadComplete(uploadedCount, requiresReview, errors, collectionId, galleryId, secretKey, dataRefs) {
-        hideLoader();
+            const formData = new FormData();
+            formData.append('__RequestVerificationToken', token);
+            formData.append('RequestId', requestId);
+            formData.append('UploadId', uploadId);
+            formData.append('CollectionId', collectionId);
+            formData.append('GalleryId', galleryId);
+            formData.append('SecretKey', secretKey);
+            formData.append('File', chunk, dataRefs.files[fileIndex].name);
+            formData.append('FileSize', dataRefs.files[fileIndex].size);
+            formData.append('FileChecksum', checksum);
+            formData.append('ChunkIndex', chunkId);
+            formData.append('TotalChunks', totalChunks);
 
-        if (this.isCollection()) {
-            this.setGalleryId($(dataRefs.input), '0');
-        }
-
-        if (uploadedCount <= 0) {
-            displayMessage(
-                localization.translate('Upload'),
-                localization.translate('Upload_Failed'),
-                errors
-            );
-        } else if (requiresReview) {
-            displayMessage(
-                localization.translate('Upload'),
-                localization.translate('Upload_Success_Pending_Review'),
-                errors
-            );
-
-            this.notifyUploadCompleted(collectionId, galleryId, secretKey, uploadedCount, dataRefs);
-        } else {
-            displayMessage(
-                localization.translate('Upload'),
-                localization.translate('Upload_Success'),
-                errors,
-                () => refreshGalleryPage()
-            );
-        }
-    }
-
-    notifyUploadCompleted(collectionId, galleryId, secretKey, uploadedCount, dataRefs) {
-        const formData = new FormData();
-        formData.append('CollectionId', collectionId);
-        formData.append('GalleryId', galleryId);
-        formData.append('SecretKey', secretKey);
-        formData.append('Count', uploadedCount);
-
-        setTimeout(() => {
             $.ajax({
-                url: '/Gallery/UploadCompleted',
+                url: '/Gallery/UploadFileChunk',
                 type: 'POST',
                 data: formData,
                 async: true,
@@ -429,25 +343,117 @@ class UploadBox {
                 dataType: 'json',
                 processData: false,
                 success: (response) => {
-                    dataRefs.input.value = '';
-
-                    const counter = $('.review-counter');
-                    if (counter.length > 0) {
-                        counter.find('.review-counter-total').text(response.counters.total);
-                        counter.find('.review-counter-approved').text(response.counters.approved);
-                        counter.find('.review-counter-pending').text(response.counters.pending);
+                    if (response?.success === true) {
+                        if (response?.complete === true) {
+                            uploadedCount++;
+                            processFileUpload(requestId, fileIndex + 1);
+                        } else {
+                            processFileChunk(requestId, fileIndex, uploadId, chunkId + 1);
+                        }
+                    } else if (response?.errors?.length > 0) {
+                        errors.push(response.errors);
+                        processFileUpload(requestId, fileIndex + 1);
                     }
                 },
-                error: (response) => {
-                    console.error(response);
-                    displayMessage(
-                        localization.translate('Upload'),
-                        localization.translate('Upload_Failed'),
-                        [response]
-                    );
-                }
+                error: (jqXHR, textStatus, errorThrown) => {
+                    try {
+                        const response = JSON.parse(jqXHR.responseText);
+                        console.error(response);
+                        errors.push(response.errors ?? []);
+                    } catch { }
+                    processFileUpload(requestId, fileIndex + 1);
+                },
+                xhr: () => {
+                    const xhr = new window.XMLHttpRequest();
+
+                    xhr.upload.addEventListener("progress", (evt) => {
+                        if (evt.lengthComputable) {
+                            const percentComplete = Math.floor((evt.loaded / evt.total) * 100);
+                            const progressElement = $('span#file-upload-progress');
+                            if (progressElement.length > 0) {
+                                progressElement.text(`(${percentComplete}%)`);
+                            }
+                        }
+                    }, false);
+
+                    xhr.upload.addEventListener("error", (evt) => {
+                        console.error(evt);
+                        if (currentAttempt < this.maxRetries) {
+                            setTimeout(() => {
+                                console.log(`File chunk failed to upload. Retrying... (Attempt: ${currentAttempt})`);
+                                processFileChunk(requestId, fileIndex, uploadId, chunkId, currentAttempt + 1);
+                            }, this.retryDelay);
+                        } else {
+                            console.log(`File chunk failed to upload multiple times. Aborting...`);
+                            displayMessage(localization.translate('Upload'), localization.translate('Upload_Failed'), errors);
+                        }
+                    }, false);
+
+                    return xhr;
+                },
             });
-        }, 500);
+        };
+
+        const handleUploadComplete = (requestId) => {
+            hideLoader();
+
+            if (this.isCollection()) {
+                this.setGalleryId($(dataRefs.input), '0');
+            }
+
+            if (uploadedCount > 0) {
+                const formData = new FormData();
+                formData.append('RequestId', requestId);
+                formData.append('CollectionId', collectionId);
+                formData.append('GalleryId', galleryId);
+                formData.append('SecretKey', secretKey);
+                formData.append('UploadCount', uploadedCount);
+
+                setTimeout(() => {
+                    $.ajax({
+                        url: '/Gallery/UploadCompleted',
+                        type: 'POST',
+                        data: formData,
+                        async: true,
+                        cache: false,
+                        contentType: false,
+                        dataType: 'json',
+                        processData: false,
+                        success: (response) => {
+                            dataRefs.input.value = '';
+
+                            const counter = $('.review-counter');
+                            if (counter.length > 0) {
+                                counter.find('.review-counter-total').text(response.counters.total);
+                                counter.find('.review-counter-approved').text(response.counters.approved);
+                                counter.find('.review-counter-pending').text(response.counters.pending);
+                            }
+
+                            refreshGalleryPage();
+
+                            if (response.requiresReview) {
+                                displayMessage(localization.translate('Upload'), localization.translate('Upload_Success_Pending_Review'), errors);
+                            } else {
+                                displayMessage(localization.translate('Upload'), localization.translate('Upload_Success'), errors);
+                            }
+                        },
+                        error: (jqXHR, textStatus, errorThrown) => {
+                            try {
+                                const response = JSON.parse(jqXHR.responseText);
+                                console.error(response);
+                                errors.push(response.errors ?? []);
+                            } catch { }
+                            displayMessage(localization.translate('Upload'), localization.translate('Upload_Failed'), errors ?? []);
+                        }
+                    });
+                }, 500);
+            } else {
+                displayMessage(localization.translate('Upload'), localization.translate('Upload_Failed'), errors);
+            }
+        }
+
+        const requestId = crypto.randomUUID();
+        await processFileUpload(requestId, 0);
     }
 }
 

@@ -114,5 +114,20 @@ namespace Memtly.Core.Controllers
 
             return new EmptyResult();
         }
+
+        protected async Task<IActionResult> ErrorResponse(int errorCode)
+        {
+            var isAjaxRequest = Request.Headers.ContainsKey("X-Requested-With") && string.Equals(Request.Headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
+            if (isAjaxRequest)
+            {
+                var localizer = HttpContext.RequestServices.GetService<IStringLocalizer<Localization.Translations>>();
+                if (localizer != null)
+                { 
+                    return new JsonResult(new { success = false, error_title = localizer[$"{errorCode}_Error_Title"].Value, error_message = localizer[$"{errorCode}_Error_Message"].Value });
+                }
+            }
+
+            return new RedirectToActionResult("Index", "Error", new { Reason = errorCode }, false);
+        }
     }
 }

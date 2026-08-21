@@ -57,7 +57,6 @@
             public const string GuestGalleryCreation = "Memtly:Guest_Gallery_Creation";
             public const string HideKeyFromQRCode = "Memtly:Hide_Key_From_QR_Code";
             public const string LinksOpenNewTab = "Memtly:Links_Open_New_Tab";
-            public const string ThumbnailSize = "Memtly:Thumbnail_Size";
         }
 
         public class Account
@@ -102,6 +101,7 @@
             public const string Quote = "Memtly:Gallery:Quote";
             public const string Columns = "Memtly:Gallery:Columns";
             public const string ItemsPerPage = "Memtly:Gallery:Items_Per_Page";
+            public const string PaginationStyle = "Memtly:Gallery:Pagination_Style";
             public const string FullWidth = "Memtly:Gallery:Full_Width";
             public const string RetainRejectedItems = "Memtly:Gallery:Retain_Rejected_Items";
             public const string Likes = "Memtly:Gallery:Likes";
@@ -122,6 +122,13 @@
             public const string CameraUploads = "Memtly:Gallery:Camera_Uploads";
             public const string ShowFilters = "Memtly:Gallery:Show_Filters";
             public const string ShowPendingUploads = "Memtly:Gallery:Show_Pending_Uploads";
+
+            public class Thumbnails
+            {
+                public const string BaseKey = "Memtly:Gallery:Thumbnails:";
+                public const string Size = "Memtly:Gallery:Thumbnails:Size";
+                public const string Style = "Memtly:Gallery:Thumbnails:Style";
+            }
 
             public class QRCode
             {

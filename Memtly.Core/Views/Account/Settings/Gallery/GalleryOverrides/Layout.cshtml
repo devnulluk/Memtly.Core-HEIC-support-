@@ -44,6 +44,26 @@
 
         <div class="row mb-4 mb-lg-4 setting-container">
             <div class="col-12">
+                <label class="setting-label">@_localizer["Settings_Gallery_PaginationStyle_Label"].Value</label>
+                <select class="setting-field form-control" data-setting-name="@MemtlyConfiguration.Gallery.PaginationStyle">
+                    @foreach (var option in ViewOptions.PaginationStyleOption)
+                    {
+                        if (Model.Settings.GetValue(MemtlyConfiguration.Gallery.PaginationStyle.ToUpper(), ((int)PaginationStyle.NumberBar).ToString()).Equals(option.Value, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <option value="@option.Value" selected="selected">@_localizer[@option.Key].Value</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@_localizer[@option.Key].Value</option>
+                        }
+                    }
+                </select>
+                <div class="setting-hint form-text">@_localizer["Settings_Gallery_PaginationStyle_Help"].Value</div>
+            </div>
+        </div>
+
+        <div class="row mb-4 mb-lg-4 setting-container">
+            <div class="col-12">
                 <label class="setting-label">@_localizer["Settings_Gallery_ShowTitle_Label"].Value</label>
                 <select class="setting-field form-control" data-setting-name="@MemtlyConfiguration.Gallery.ShowTitle">
                     @foreach (var option in ViewOptions.YesNo)

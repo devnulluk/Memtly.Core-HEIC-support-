@@ -1,4 +1,6 @@
-﻿namespace Memtly.Core.Constants
+﻿using Memtly.Core.Enums;
+
+namespace Memtly.Core.Constants
 {
     public class ViewOptions
     {
@@ -71,6 +73,18 @@
             { "None", "0" },
             { "Moderate", "1" },
             { "Strict", "2" }
+        };
+
+        public static IDictionary<string, string> ThumbnailStyleOption = new Dictionary<string, string>()
+        {
+            { "Tile", ((int)ThumbnailStyle.Tile).ToString() },
+            { "Letterbox", ((int)ThumbnailStyle.Letterbox).ToString() }
+        };
+
+        public static IDictionary<string, string> PaginationStyleOption = new Dictionary<string, string>()
+        {
+            { "NumberBar", ((int)PaginationStyle.NumberBar).ToString() },
+            { "ScrollLoading", ((int)PaginationStyle.ScrollLoading).ToString() }
         };
     }
 }

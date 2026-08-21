@@ -1,0 +1,197 @@
+﻿@model Memtly.Core.Models.PhotoGallery
+
+@using System.Text.RegularExpressions
+@using Memtly.Core.Constants
+
+@{
+    var userPermissions = User?.Identity?.GetUserPermissions() ?? new Permissions();
+    var identityEnabled = await _settings.GetOrDefault(MemtlyConfiguration.IdentityCheck.Enabled, true);
+
+    var thumbnailStyle = await _settings.GetOrDefault(MemtlyConfiguration.Gallery.Thumbnails.Style, ThumbnailStyle.Tile, Model?.Gallery?.Id);
+    var columnCount = await _settings.GetOrDefault(MemtlyConfiguration.Gallery.Columns, 6, Model?.Gallery?.Id);
+    if (columnCount < 1 || columnCount > 12)
+    {
+        columnCount = 6;
+    }
+
+    try
+    {
+        switch (Model?.ViewMode ?? ViewMode.Default)
+        {
+            case ViewMode.Single:
+                {
+                    columnCount = 1;
+                    break;
+                }
+            default:
+                {
+                    if (ViewBag.IsMobile ?? false)
+                    {
+                        columnCount = 2;
+                    }
+                    break;
+                }
+        }
+    }
+    catch { }
+
+    if (columnCount == 1)
+    {
+        thumbnailStyle = ThumbnailStyle.Single;
+    }
+
+    IEnumerable<IGrouping<string?, PhotoGalleryImage>>? imageGroups = null;
+    if (Model?.Images != null && Model.Images.Any())
+    {
+        switch (Model?.GroupBy ?? GalleryGroup.DateUploaded)
+        {
+            case GalleryGroup.DateUploaded:
+                imageGroups = Model?.Images?.GroupBy(x => (x.UploadDate != null ? x.UploadDate.Value.ToLocalTime().ToString("dddd, d MMMM yyyy") : "Unknown"));
+                switch (Model?.OrderBy ?? GalleryOrder.Descending)
+                {
+                    case GalleryOrder.Ascending:
+                        imageGroups = imageGroups?.OrderBy(x => x.FirstOrDefault()?.UploadDate ?? new DateTime());
+                        break;
+                    case GalleryOrder.Random:
+                        imageGroups = imageGroups?.OrderBy(x => Guid.NewGuid());
+                        break;
+                    default:
+                        imageGroups = imageGroups?.OrderByDescending(x => x.FirstOrDefault()?.UploadDate ?? new DateTime());
+                        break;
+                }
+                break;
+            case GalleryGroup.DateTaken:
+                imageGroups = Model?.Images?.GroupBy(x => (x.CaptureDate != null ? x.CaptureDate.Value.ToLocalTime().ToString("dddd, d MMMM yyyy") : "Unknown"));
+                switch (Model?.OrderBy ?? GalleryOrder.Descending)
+                {
+                    case GalleryOrder.Ascending:
+                        imageGroups = imageGroups?.OrderBy(x => x.FirstOrDefault()?.CaptureDate ?? new DateTime());
+                        break;
+                    case GalleryOrder.Random:
+                        imageGroups = imageGroups?.OrderBy(x => Guid.NewGuid());
+                        break;
+                    default:
+                        imageGroups = imageGroups?.OrderByDescending(x => x.FirstOrDefault()?.CaptureDate ?? new DateTime());
+                        break;
+                }
+                break;
+            case GalleryGroup.MediaType:
+                imageGroups = Model?.Images?.GroupBy(x => x.MediaType.ToString());
+                switch (Model?.OrderBy ?? GalleryOrder.Descending)
+                {
+                    case GalleryOrder.Ascending:
+                        imageGroups = imageGroups?.OrderBy(x => x.Key);
+                        break;
+                    case GalleryOrder.Random:
+                        imageGroups = imageGroups?.OrderBy(x => Guid.NewGuid());
+                        break;
+                    default:
+                        imageGroups = imageGroups?.OrderByDescending(x => x.Key);
+                        break;
+                }
+                break;
+            case GalleryGroup.Uploader:
+                imageGroups = Model?.Images?.GroupBy(x => !string.IsNullOrWhiteSpace(x.UploadedBy) ? x.UploadedBy : "Anonymous");
+                switch (Model?.OrderBy ?? GalleryOrder.Descending)
+                {
+                    case GalleryOrder.Ascending:
+                        imageGroups = imageGroups?.OrderBy(x => x.Key);
+                        break;
+                    case GalleryOrder.Random:
+                        imageGroups = imageGroups?.OrderBy(x => Guid.NewGuid());
+                        break;
+                    default:
+                        imageGroups = imageGroups?.OrderByDescending(x => x.Key);
+                        break;
+                }
+                break;
+            case GalleryGroup.Gallery:
+                imageGroups = Model?.Images?.GroupBy(x => !string.IsNullOrWhiteSpace(x.GalleryName) ? x.GalleryName : "Unknown");
+                switch (Model?.OrderBy ?? GalleryOrder.Descending)
+                {
+                    case GalleryOrder.Ascending:
+                        imageGroups = imageGroups?.OrderBy(x => x.Key);
+                        break;
+                    case GalleryOrder.Random:
+                        imageGroups = imageGroups?.OrderBy(x => Guid.NewGuid());
+                        break;
+                    default:
+                        imageGroups = imageGroups?.OrderByDescending(x => x.Key);
+                        break;
+                }
+                break;
+            default:
+                imageGroups = Model?.Images?.GroupBy(x => "None");
+                break;
+        }
+    }
+}
+
+@if (imageGroups != null)
+{
+    foreach (var imageGroup in imageGroups)
+    {
+        var imageGroupKey = Regex.Replace(imageGroup!.Key!.ToString().ToLower().Replace(" ", "-"), @"[^a-z0-9\-_]", string.Empty, RegexOptions.Compiled);
+        var imageGroupImages = Model?.OrderBy == GalleryOrder.Random ? imageGroup.OrderBy(x => Guid.NewGuid()).ToList() : imageGroup.ToList();
+
+        <div class="image-group image-group-@(imageGroupKey)" data-key="@(imageGroupKey)">
+            @if (imageGroupImages != null && imageGroupImages.Any())
+            {
+                if (Model?.GroupBy != GalleryGroup.None)
+                {
+                    <div class="row">
+                        <div class="col-12">
+                            <h1 class="display-7">@imageGroup.Key
+                                @if (Model?.Gallery != null && Model?.Gallery?.Id > 0 && (await _settings.GetOrDefault(MemtlyConfiguration.Gallery.Download, true, Model?.Gallery?.Id) || _identity.IsOwner(User, Model!.Gallery.Owner) || _identity.IsPrivilegedUser(User))) // TODO - Look into permissions here
+                                {
+                                    <span class="header-actions">
+                                        <span class="btnDownloadGroup action link-primary-2 pointer" data-gallery-id="@Model?.Gallery?.Id" data-gallery-name="@Model?.Gallery?.Name" data-gallery-key="@Model?.SecretKey" data-group-name="@((int?)Model?.GroupBy)|@imageGroup.Key|@(Model?.FilterStateBy ?? GalleryItemState.All)" alt="@_localizer["Download"].Value">
+                                            <i class="fas fa-download"></i>
+                                            <span>@_localizer["Download"].Value</span>
+                                        </span>
+                                    </span>
+                                }
+                            </h1>
+                        </div>
+                    </div>
+                }
+
+                <div class="row mb-4">
+                    <div class="col-12 image-container image-container-@(thumbnailStyle.ToString().ToLower())" style="--cols: @(columnCount);">
+                        @for (var index = 0; index < imageGroupImages.Count; index++)
+                        {
+                            var image = imageGroupImages.ElementAt(index);
+                            var fallbackImage = image.MediaType == MediaType.Video ? "" : "";
+
+                            <div class="media-viewer-card image-tile image-tile-@(image.Orientation.ToString().ToLower())">
+                                <a href="@image.ImagePath" class="media-viewer-item" data-media-viewer-id="@image.Id" data-media-viewer-collection="@imageGroup.Key" data-media-viewer-type="gallery_item">
+                                    <img src="@image?.ThumbnailPath" class="shadow-1-strong" loading="lazy" onerror="this.onerror=null; this.src='@(image!.FallbackImagePath)'; this.closest('.media-viewer-item').querySelector('.media-viewer-play')?.remove();"/>
+                                    @if (image?.MediaType == MediaType.Video)
+                                    {
+                                        <svg class="media-viewer-play" loading="lazy" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#dadada" height="800px" width="800px" version="1.1" id="Capa_1" viewBox="0 0 60 60" xml:space="preserve">
+                                            <g>
+                                                <path d="M45.563,29.174l-22-15c-0.307-0.208-0.703-0.231-1.031-0.058C22.205,14.289,22,14.629,22,15v30   c0,0.371,0.205,0.711,0.533,0.884C22.679,45.962,22.84,46,23,46c0.197,0,0.394-0.059,0.563-0.174l22-15   C45.836,30.64,46,30.331,46,30S45.836,29.36,45.563,29.174z M24,43.107V16.893L43.225,30L24,43.107z" fill="#dadada" />
+                                                <path d="M30,0C13.458,0,0,13.458,0,30s13.458,30,30,30s30-13.458,30-30S46.542,0,30,0z M30,58C14.561,58,2,45.439,2,30   S14.561,2,30,2s28,12.561,28,28S45.439,58,30,58z" fill="#dadada" />
+                                            </g>
+                                        </svg>
+                                    }
+                                    @if (_identity.IsValid(User))
+                                    {
+                                        if (userPermissions.Gallery.HasFlag(GalleryPermissions.Download))
+                                        {
+                                            <i class="fa fa-square btn-multi-select" data-id="@image?.Name"></i>
+                                        }
+                                        if (userPermissions.Review.HasFlag(ReviewPermissions.Delete) || _identity.IsOwner(User, Model?.Gallery?.Owner) || _identity.IsOwner(User, image!.UploaderId))
+                                        {
+                                            <i class="fa fa-trash btnDeletePhoto btn-delete-item d-lg-none" data-photo-id="@image?.Id" data-photo-name="@image?.Name"></i>
+                                        }
+                                    }
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}

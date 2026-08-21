@@ -62,52 +62,38 @@
 
 @if (Model?.Images != null && Model.Images.Any())
 {
+    var paginationStyle = await _settings.GetOrDefault(MemtlyConfiguration.Gallery.PaginationStyle, PaginationStyle.NumberBar, Model?.Gallery?.Id);
+
     <div class="row mx-1">
-        @if (Model.ViewMode == ViewMode.Slideshow)
-        {
-            <partial name="~/Views/Gallery/Modes/Slideshow.cshtml" model="Model" />
-        }
-        else
-        {
-            var imageLookup = Model.Images.ToLookup(x => x.State);
-
-            var pendingImages = imageLookup[GalleryItemState.Pending];
-            var approvedImages = imageLookup[GalleryItemState.Approved];
-
-            if (pendingImages != null && pendingImages.Any())
+        <div class="col-12 gallery-container-wrapper">
+            @if (Model.ViewMode == ViewMode.Slideshow)
             {
-                Model.Images = pendingImages?.ToList();
-
-                <div class="row">
-                    <div class="col-12">
-                        <h5>@(_localizer[_identity.IsOwner(User, Model!.Gallery!.Owner) || _identity.IsPrivilegedUser(User) ? "Pending_Uploads" : "Your_Pending_Uploads"].Value)</h5>
-                    </div>
-                </div>
-                <partial name="~/Views/Gallery/Modes/Default.cshtml" model="Model" />
-
-                if (approvedImages != null && approvedImages.Any())
-                {
-                    <div class="row mt-4">
-                        <div class="col-12">
-                            <h5>@(_localizer["Approved_Gallery_Uploads"].Value)</h5>
-                        </div>
-                    </div>
-                }
+                <partial name="~/Views/Gallery/Modes/Slideshow.cshtml" model="Model" />
             }
-                        
-            Model.Images = approvedImages?.ToList();
-            <partial name="~/Views/Gallery/Modes/Default.cshtml" model="Model" />
+            else
+            {
+                <partial name="~/Views/Gallery/Modes/Default.cshtml" model="Model" />
+            }
+        </div>
+        
+        @if (Model.ViewMode != ViewMode.Slideshow && paginationStyle != PaginationStyle.ScrollLoading)
+        {
+            var idleTimeout = await _settings.GetOrDefault(MemtlyConfiguration.Gallery.IdleRefreshMins, 0, Model?.Gallery?.Id);
+            if (idleTimeout > 0)
+            {
+                <input id="galleryIdleRefreshInterval" type="hidden" value="@(TimeSpan.FromMinutes(idleTimeout).TotalMilliseconds)" />
+            }
         }
     </div>
 
-    @if (Model.Pagination && Model.ViewMode != ViewMode.Slideshow)
-    {
-        <div class="row">
+    <div class="row pagination" data-pagination-style="@(paginationStyle.ToString().ToLower())">
+        @if (paginationStyle != PaginationStyle.ScrollLoading && Model!.Pagination && Model.ViewMode != ViewMode.Slideshow)
+        {
             <div class="col-12">
-                <partial name="~/Views/Shared/_Pagination.cshtml" model="new PaginationModel() { CurrentPage = Model.CurrentPage, TotalItems = Model?.ApprovedCount ?? 0, ItemsPerPage = Model?.ItemsPerPage ?? 50 }" />
+                <partial name="~/Views/Shared/_Pagination.cshtml" model="new PaginationModel() { CurrentPage = Model.CurrentPage, TotalItems = ((Model?.ApprovedCount ?? 0) + (Model?.UserPendingCount ?? 0)), ItemsPerPage = Model?.ItemsPerPage ?? 50 }" />
             </div>
-        </div>
-    }
+        }
+    </div>
 }
 else
 {

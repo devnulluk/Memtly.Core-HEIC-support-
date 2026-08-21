@@ -11016,30 +11016,33 @@ footer {
   z-index: 100;
 }
 
-.btnReviewApprove {
+.btnReviewApprove, .btnReviewReject {
     color: #FFFFFF;
     font-size: 12px;
-    background-color: rgba(var(--bs-success-rgb), 1);
     padding: 8px;
     border-radius: 100px;
     position: absolute;
-    top: 160px;
-    left: 10px;
+    bottom: 50px;
     width: 12px;
     height: 12px;
 }
 
+.btnReviewApprove {
+    background-color: rgba(var(--bs-success-rgb), 1);
+    left: 10px;
+}
+
 .btnReviewReject {
-    color: #FFFFFF;
-    font-size: 12px;
     background-color: rgba(var(--bs-danger-rgb), 1);
-    padding: 8px;
-    border-radius: 100px;
-    position: absolute;
-    top: 160px;
     right: 10px;
-    width: 12px;
-    height: 12px;
+}
+
+@media (max-width: 992px) {
+    .btnReviewApprove, .btnReviewReject {
+        bottom: 75px;
+        width: 10px;
+        height: 10px;
+    }
 }
 
 .btn-multi-select {

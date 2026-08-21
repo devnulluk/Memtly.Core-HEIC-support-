@@ -189,10 +189,11 @@ namespace Memtly.Core.Helpers
 
                 try
                 {
-                    using (var md5 = MD5.Create())
+                    using (var sha256 = SHA256.Create())
                     using (var stream = File.OpenRead(path))
                     {
-                        checksum = Encoding.UTF8.GetString(md5.ComputeHash(stream));
+                        var hashBytes = sha256.ComputeHash(stream);
+                        checksum = Convert.ToHexString(hashBytes).ToLowerInvariant();
                     }
                 }
                 catch (Exception ex) 

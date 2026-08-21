@@ -27,7 +27,11 @@ function bindGallerySelector() {
                     if (data.success && data.redirectUrl) {
                         window.location = data.redirectUrl;
                     } else {
-                        displayMessage(localization.translate('Gallery'), localization.translate('Gallery_Invalid_Gallery_Or_Secret_Key'));
+                        if (data.error_title && data.error_message) {
+                            displayMessage(localization.translate('Gallery'), data.error_title, [data.error_message]);
+                        } else {
+                            displayMessage(localization.translate('Gallery'), localization.translate('Gallery_Invalid_Gallery_Or_Secret_Key'));
+                        }
                     }
                 }
             });

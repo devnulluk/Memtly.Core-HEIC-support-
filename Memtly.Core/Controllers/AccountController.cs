@@ -9,7 +9,6 @@ using System.Web;
 using Memtly.Core.Attributes;
 using Memtly.Core.BackgroundWorkers;
 using Memtly.Core.Constants;
-using Memtly.Core.EntityFramework.Models;
 using Memtly.Core.Enums;
 using Memtly.Core.Extensions;
 using Memtly.Core.Helpers;
@@ -37,6 +36,7 @@ namespace Memtly.Core.Controllers
         private readonly IDatabaseHelper _database;
         private readonly IDeviceDetector _deviceDetector;
         private readonly IFileHelper _fileHelper;
+        private readonly IImageHelper _imageHelper;
         private readonly IEncryptionHelper _encryption;
         private readonly INotificationHelper _notificationHelper;
         private readonly ISmtpClientWrapper _smtpClientWrapper;
@@ -54,13 +54,14 @@ namespace Memtly.Core.Controllers
         private readonly string ThumbnailsDirectory;
         private readonly string CustomResourcesDirectory;
 
-        public AccountController(ISettingsHelper settings, IDatabaseHelper database, IDeviceDetector deviceDetector, IFileHelper fileHelper, IEncryptionHelper encryption, INotificationHelper notificationHelper, ISmtpClientWrapper smtpClientWrapper, Helpers.IUrlHelper url, IAuditHelper audit, IIdentityHelper identity, ILoggerFactory loggerFactory, IStringLocalizer<Localization.Translations> localizer)
+        public AccountController(ISettingsHelper settings, IDatabaseHelper database, IDeviceDetector deviceDetector, IFileHelper fileHelper, IImageHelper imageHelper, IEncryptionHelper encryption, INotificationHelper notificationHelper, ISmtpClientWrapper smtpClientWrapper, Helpers.IUrlHelper url, IAuditHelper audit, IIdentityHelper identity, ILoggerFactory loggerFactory, IStringLocalizer<Localization.Translations> localizer)
             : base()
         {
             _settings = settings;
             _database = database;
             _deviceDetector = deviceDetector;
             _fileHelper = fileHelper;
+            _imageHelper = imageHelper;
             _encryption = encryption;
             _notificationHelper = notificationHelper;
             _smtpClientWrapper = smtpClientWrapper;
@@ -335,7 +336,7 @@ namespace Memtly.Core.Controllers
                 }
             }
 
-            return new RedirectToActionResult("Index", "Error", new { Reason = ErrorCode.InvalidVerificationLink }, false);
+            return await ErrorResponse(ErrorCode.InvalidVerificationLink);
         }
 
         [AllowAnonymous]
@@ -422,7 +423,7 @@ namespace Memtly.Core.Controllers
                 }
             }
 
-            return new RedirectToActionResult("Index", "Error", new { Reason = ErrorCode.InvalidPasswordResetLink }, false);
+            return await ErrorResponse(ErrorCode.InvalidPasswordResetLink);
         }
 
         [AllowAnonymous]
@@ -601,7 +602,7 @@ namespace Memtly.Core.Controllers
                         if (model.ActiveTab == AccountTabs.Reviews)
                         {
                             model.PendingRequests = await GetPendingReviews(null, page, limit);
-                            model.TotalItems = (await _database.GetGalleryItemCount(null, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
+                            model.TotalItems = (await _database.GetGalleryItemCount(null, null, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
                         }
                         else if (model.ActiveTab == AccountTabs.Galleries)
                         {
@@ -643,7 +644,7 @@ namespace Memtly.Core.Controllers
                         if (model.ActiveTab == AccountTabs.Reviews)
                         {
                             model.PendingRequests = await GetPendingReviews(user.Id, page, limit);
-                            model.TotalItems = (await _database.GetGalleryItemCount(user.Id, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
+                            model.TotalItems = (await _database.GetGalleryItemCount(user.Id, null, GalleryItemState.Pending))[$"User{GalleryItemState.Pending.ToString()}"];
                         }
                         else if (model.ActiveTab == AccountTabs.Galleries)
                         {
@@ -798,12 +799,12 @@ namespace Memtly.Core.Controllers
                     if (_identity.IsPrivilegedUser(User))
                     {
                         result.PendingRequests = await GetPendingReviews(null, page, limit);
-                        result.TotalItems = (await _database.GetGalleryItemCount(null, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
+                        result.TotalItems = (await _database.GetGalleryItemCount(null, null, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
                     }
                     else
                     {
                         result.PendingRequests = await GetPendingReviews(user.Id, page, limit);
-                        result.TotalItems = (await _database.GetGalleryItemCount(user.Id, GalleryItemState.Pending))[GalleryItemState.Pending.ToString()];
+                        result.TotalItems = (await _database.GetGalleryItemCount(user.Id, null, GalleryItemState.Pending))[$"User{GalleryItemState.Pending.ToString()}"];
                     }
                 }
             }
@@ -988,6 +989,10 @@ namespace Memtly.Core.Controllers
                                 else
                                 {
                                     _fileHelper.DeleteFileIfExists(reviewFile);
+
+                                    var thumbnailDir = Path.Combine(ThumbnailsDirectory, gallery.Identifier);
+                                    var thumbnailFile = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(reviewFile)}.webp");
+                                    _fileHelper.DeleteFileIfExists(thumbnailFile);
                                 }
 
                                 await _database.DeleteGalleryItem(review);
@@ -1058,6 +1063,10 @@ namespace Memtly.Core.Controllers
                                         else
                                         {
                                             _fileHelper.DeleteFileIfExists(reviewFile);
+
+                                            var thumbnailDir = Path.Combine(ThumbnailsDirectory, gallery.Identifier);
+                                            var thumbnailFile = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(reviewFile)}.webp");
+                                            _fileHelper.DeleteFileIfExists(thumbnailFile);
                                         }
 
                                         await _database.DeleteGalleryItem(review);
@@ -1768,9 +1777,12 @@ namespace Memtly.Core.Controllers
                         if (gallery != null && (_identity.CanEdit(User, ReviewPermissions.Delete, gallery.Owner) || _identity.IsOwner(User, gallery.Owner) || _identity.IsOwner(User, photo.UserId)))
                         {
                             var galleryDir = Path.Combine(UploadsDirectory, gallery.Identifier);
-                            var photoPath = Path.Combine(galleryDir, photo.State == GalleryItemState.Pending ? "Pending" : string.Empty, photo.Title);
+                            var filePath = Path.Combine(galleryDir, photo.State == GalleryItemState.Pending ? "Pending" : string.Empty, photo.Title);
+                            _fileHelper.DeleteFileIfExists(filePath);
 
-                            _fileHelper.DeleteFileIfExists(photoPath);
+                            var thumbnailDir = Path.Combine(ThumbnailsDirectory, gallery.Identifier);
+                            var thubnailPath = Path.Combine(thumbnailDir, $"{Path.GetFileNameWithoutExtension(filePath)}.webp");
+                            _fileHelper.DeleteFileIfExists(thubnailPath);
 
                             await _audit.LogAction(_identity.GetUserId(User), $"'{photo?.Title}' {_localizer["Audit_ItemDeletedInGallery"].Value} '{gallery?.Name}'", AuditSeverity.Warning);
                             await _database.DeleteGalleryItem(photo);
@@ -2427,6 +2439,22 @@ namespace Memtly.Core.Controllers
                                         System.IO.File.Copy(Path.Combine(AssetsDirectory, $"DemoImage.png"), filePath, true);
                                     }
 
+                                    try
+                                    {
+                                        var thumbnailPath = Path.Combine(ThumbnailsDirectory, SystemGalleries.CustomResources);
+
+                                        _fileHelper.CreateDirectoryIfNotExists(ThumbnailsDirectory);
+                                        _fileHelper.CreateDirectoryIfNotExists(thumbnailPath);
+
+                                        var savePath = Path.Combine(thumbnailPath, $"{Path.GetFileNameWithoutExtension(filePath)}.webp");
+
+                                        await _imageHelper.GenerateThumbnail(filePath, savePath, 720);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, $"{_localizer["Failed_To_Generate_Thumbnail"].Value} - '{filePath}' - {ex?.Message}");
+                                    }
+
                                     var item = await _database.AddCustomResource(new CustomResourceModel()
                                     {
                                         Title = title,
@@ -2541,6 +2569,7 @@ namespace Memtly.Core.Controllers
                         if (!string.IsNullOrWhiteSpace(resource.FileName))
                         { 
                             _fileHelper.DeleteFileIfExists(Path.Combine(CustomResourcesDirectory, resource.FileName));
+                            _fileHelper.DeleteFileIfExists(Path.Combine(ThumbnailsDirectory, SystemGalleries.CustomResources, $"{Path.GetFileNameWithoutExtension(resource.FileName)}.webp"));
                         }
 
                         await _audit.LogAction(_identity.GetUserId(User), $"{_localizer["Audit_CustomResourceDeleted"].Value} '{resource?.FileName}'", AuditSeverity.Warning);
@@ -2581,6 +2610,7 @@ namespace Memtly.Core.Controllers
                             if (!string.IsNullOrWhiteSpace(resource.FileName))
                             {
                                 _fileHelper.DeleteFileIfExists(Path.Combine(CustomResourcesDirectory, resource.FileName));
+                                _fileHelper.DeleteFileIfExists(Path.Combine(ThumbnailsDirectory, SystemGalleries.CustomResources, $"{Path.GetFileNameWithoutExtension(resource.FileName)}.webp"));
                             }
 
                             await _audit.LogAction(_identity.GetUserId(User), $"{_localizer["Audit_CustomResourceDeleted"].Value} '{resource?.FileName}'", AuditSeverity.Warning);
@@ -2865,6 +2895,8 @@ namespace Memtly.Core.Controllers
                                 CaptureDate = x.DateTaken ?? x.UploadedDate,
                                 ImagePath = $"/{Path.Combine(UploadsDirectory, gallery.Identifier).Remove(RootDirectory).Replace('\\', '/').TrimStart('/')}/Pending/{Uri.EscapeDataString(x.Title)}",
                                 ThumbnailPath = $"/{Path.Combine(ThumbnailsDirectory, gallery.Identifier).Remove(RootDirectory).Replace('\\', '/').TrimStart('/')}/{Uri.EscapeDataString(Path.GetFileNameWithoutExtension(x.Title))}.webp",
+                                FallbackImagePath = $"/_content/Memtly.Core/images/{(x.MediaType == MediaType.Video ? "BrokenVideo" : "BrokenImage")}.webp",
+                                Orientation = x.Orientation,
                                 MediaType = x.MediaType,
                                 State = x.State
                             })?.ToList(),

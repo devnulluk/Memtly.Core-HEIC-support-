@@ -364,24 +364,24 @@ namespace Memtly.Core.Helpers.Database
         #endregion
 
         #region Gallery Items
-        public async Task<IDictionary<string, int>> GetCollectionItemCount(int? collectionId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
+        public async Task<IDictionary<string, int>> GetCollectionItemCount(int? userId = null, int? collectionId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
         {
             if (collectionId != null && collectionId >= 0)
             {
                 var galleryIds = collectionId > 0 ? (await GetCollections(collectionId))?.Select(ci => ci.GalleryId)?.ToList() : new List<int>();
-                return await GetGalleryItemCount(galleryIds, state, type, orientation);
+                return await GetGalleryItemCount(userId, galleryIds, state, type, orientation);
             }
 
             return new Dictionary<string, int>();
         }
 
-        public async Task<IDictionary<string, int>> GetGalleryItemCount(int? galleryId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
+        public async Task<IDictionary<string, int>> GetGalleryItemCount(int? userId = null, int? galleryId = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
         {
             var galleryIds = galleryId != null ? new List<int> { (int)galleryId } : null;
-            return await GetGalleryItemCount(galleryIds, state, type, orientation);
+            return await GetGalleryItemCount(userId, galleryIds, state, type, orientation);
         }
 
-        private async Task<IDictionary<string, int>> GetGalleryItemCount(List<int>? galleryIds = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
+        private async Task<IDictionary<string, int>> GetGalleryItemCount(int? userId = null, List<int>? galleryIds = null, GalleryItemState state = GalleryItemState.All, MediaType type = MediaType.All, ImageOrientation orientation = ImageOrientation.All)
         {
             var counts = await _db.GalleryItems
                 .Where(gi =>
@@ -400,6 +400,34 @@ namespace Memtly.Core.Helpers.Database
                 if (!counts.ContainsKey(key))
                 {
                     counts.Add(key, s.ToLower().Equals(SystemGalleries.AllGallery.ToLower()) ? counts.Sum(x => x.Value) : 0);
+                }
+            }
+
+            if (userId != null && userId > 0)
+            {
+                var userCounts = await _db.GalleryItems
+                    .Where(gi =>
+                        gi.UserId == userId
+                        && (galleryIds == null || !galleryIds.Any() || galleryIds.Contains(gi.GalleryId ?? 0))
+                        && (state == GalleryItemState.All || gi.State == state)
+                        && (type == MediaType.All || gi.Type == type)
+                        && (orientation == ImageOrientation.All || gi.Orientation == orientation)
+                    )
+                     .GroupBy(gi => gi.State)
+                    .Select(g => new { State = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.State!.ToString(), x => x.Count);
+
+                foreach (var s in Enum.GetNames(typeof(GalleryItemState)))
+                {
+                    try
+                    {
+                        var key = $"User{s.ToString()}";
+                        if (!counts.ContainsKey(key))
+                        {
+                            counts.Add(key, userCounts.ContainsKey(s) ? userCounts[s] : 0);
+                        }
+                    }
+                    catch { }
                 }
             }
 
@@ -441,11 +469,17 @@ namespace Memtly.Core.Helpers.Database
                 case GalleryGroup.Gallery:
                     query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.Gallery.Name) : query.ThenByDescending(gi => gi.Gallery.Name);
                     break;
-                case GalleryGroup.Uploader:
-                    query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.UploadedBy) : query.ThenByDescending(gi => gi.UploadedBy);
+                case GalleryGroup.DateUploaded:
+                    query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.CreatedAt) : query.ThenByDescending(gi => gi.CreatedAt);
+                    break;
+                case GalleryGroup.DateTaken:
+                    query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.DateTaken ?? gi.CreatedAt) : query.ThenByDescending(gi => gi.DateTaken ?? gi.CreatedAt);
                     break;
                 case GalleryGroup.MediaType:
                     query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.Type) : query.ThenByDescending(gi => gi.Type);
+                    break;
+                case GalleryGroup.Uploader:
+                    query = order == GalleryOrder.Ascending ? query.ThenBy(gi => gi.UploadedBy) : query.ThenByDescending(gi => gi.UploadedBy);
                     break;
                 case GalleryGroup.None:
                     switch (order)

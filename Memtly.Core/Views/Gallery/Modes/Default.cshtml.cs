@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace Memtly.Core.Views.Gallery.Modes
+namespace Memtly.Core.Views.Gallery
 {
-    public class DefaultGalleryModel : PageModel
+    public class DefaultModeModel : PageModel
     {
         public void OnGet()
         {

@@ -4,8 +4,12 @@ import { displayLoader, hideLoader } from '@modules/loader';
 import MediaViewer from '@modules/media-viewer';
 import { getQueryParam } from '@utilities/urls';
 
+let mediaViewer = null;
+
 function init() {
-    new MediaViewer().init();
+    mediaViewer = new MediaViewer();
+    mediaViewer.init();
+
     bindEventHandlers();
 }
 
@@ -170,6 +174,7 @@ export function updatePendingReviews() {
         success: function (data) {
             $('#pending-reviews').html(data);
             bindEventHandlers();
+            mediaViewer.init();
         }
     });
 }

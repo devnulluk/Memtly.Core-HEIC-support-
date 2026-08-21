@@ -3,6 +3,7 @@
 @if (Model?.Settings != null && Model.Settings.Any())
 {
     <partial name="~/Views/Account/Settings/Gallery/GalleryOverrides/Layout.cshtml" model="Model" />
+    <partial name="~/Views/Account/Settings/Gallery/GalleryOverrides/Thumbnails.cshtml" model="Model.Settings" />
     <partial name="~/Views/Account/Settings/Gallery/GalleryOverrides/Uploads.cshtml" model="Model" />
     <partial name="~/Views/Account/Settings/Gallery/GalleryOverrides/Downloads.cshtml" model="Model.Settings" />
     <partial name="~/Views/Account/Settings/Gallery/GalleryOverrides/Reviews.cshtml" model="Model" />

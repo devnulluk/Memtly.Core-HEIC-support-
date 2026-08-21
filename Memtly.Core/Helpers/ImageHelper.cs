@@ -1,12 +1,13 @@
-﻿using Memtly.Core.Enums;
+﻿using System.Reflection;
+using Memtly.Core.Constants;
+using Memtly.Core.Enums;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.Png;
 using MetadataExtractor.Formats.Xmp;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Localization;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 using Xabe.FFmpeg;
 using Xabe.FFmpeg.Downloader;
 
@@ -15,8 +16,7 @@ namespace Memtly.Core.Helpers
     public interface IImageHelper
     {
         Task<bool> GenerateThumbnail(string filePath, string savePath, int size = 720);
-        Task<ImageOrientation> GetOrientation(string path);
-        ImageOrientation GetOrientation(Image img);
+        ImageOrientation GetOrientation(string path);
         MediaType GetMediaType(string filePath);
         DateTime? GetExifCreationDateTaken(string path);
         Task<bool> DownloadFFMPEG(string path);
@@ -37,62 +37,145 @@ namespace Memtly.Core.Helpers
             _localizer = localizer;
         }
 
-        public async Task<bool> GenerateThumbnail(string filePath, string savePath, int size = 720)
+        public async Task<bool> GenerateThumbnail(string filePath, string savePath, int resolution = 720)
         {
             if (_fileHelper.FileExists(filePath))
-            { 
+            {
+                var mediaType = MediaType.Unknown;
+
                 try
                 {
-                    var mediaType = GetMediaType(filePath);
+                    mediaType = GetMediaType(filePath);
                     if (mediaType == MediaType.Image || mediaType == MediaType.Video)
                     {
                         var filename = Path.GetFileName(filePath);
 
                         if (mediaType == MediaType.Video)
                         {
-                            if (FfmpegInstalled == false)
+                            try
                             {
-                                _logger.LogWarning(_localizer["FFMPEG_Downloading"].Value);
-                                return false;
+                                if (FfmpegInstalled == false)
+                                {
+                                    _logger.LogWarning(_localizer["FFMPEG_Downloading"].Value);
+                                    return false;
+                                }
+
+                                var conversion = await FFmpeg.Conversions.FromSnippet.Snapshot(filePath, savePath, TimeSpan.FromSeconds(0));
+                                await conversion.Start();
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, $"Failed to grab thumbnail frame from video - '{filePath}' - {ex?.Message}");
+                                File.Copy(Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly()!.Location)!, Directories.Private.Assets, $"BrokenVideo.webp"), savePath, true);
                             }
 
-                            var conversion = await FFmpeg.Conversions.FromSnippet.Snapshot(filePath, savePath, TimeSpan.FromSeconds(0));
-                            await conversion.Start();
                             filePath = savePath;
                         }
 
-                        using (var img = await Image.LoadAsync(filePath))
-                        {
-                            var width = 0;
-                            var height = 0;
+                        using var input = File.OpenRead(filePath);
+                        using var codec = SKCodec.Create(input, out var result) ?? throw new InvalidOperationException("Unsupported or invalid image.");
 
-                            var orientation = this.GetOrientation(img);
-                            if (orientation == ImageOrientation.Square)
-                            {
-                                width = size;
-                                height = size;
-                            }
-                            else if (orientation == ImageOrientation.Landscape)
-                            {
-                                var scale = (decimal)size / (decimal)img.Width;
-                                width = (int)((decimal)img.Width * scale);
-                                height = (int)((decimal)img.Height * scale);
-                            }
-                            else if (orientation == ImageOrientation.Portrait)
-                            {
-                                var scale = (decimal)size / (decimal)img.Height;
-                                width = (int)((decimal)img.Width * scale);
-                                height = (int)((decimal)img.Height * scale);
-                            }
-
-                            img.Mutate(x =>
-                            {
-                                x.Resize(width, height);
-                                x.AutoOrient();
-                            });
-
-                            await img.SaveAsWebpAsync(savePath);
+                        using var rawBitmap = new SKBitmap(codec.Info);
+                        var decodeResult = codec.GetPixels(codec.Info, rawBitmap.GetPixels());
+                        if (decodeResult != SKCodecResult.Success)
+                        { 
+                            throw new InvalidOperationException($"Pixel decode failed: {decodeResult}");
                         }
+
+                        using var rawImage = SKImage.FromBitmap(rawBitmap);
+
+                        var (originWidth, originHeight) = GetDimensions(codec);
+
+                        SKImage correctedImage;
+                        if (codec.EncodedOrigin == SKEncodedOrigin.TopLeft)
+                        {
+                            correctedImage = rawImage;
+                        }
+                        else
+                        {
+                            using var orientSurface = SKSurface.Create(new SKImageInfo(originWidth, originHeight));
+                            var orientCanvas = orientSurface.Canvas;
+                            orientCanvas.Clear(SKColors.Transparent);
+
+                            switch (codec.EncodedOrigin)
+                            {
+                                case SKEncodedOrigin.TopRight:
+                                    orientCanvas.Translate(originWidth, 0);
+                                    orientCanvas.Scale(-1, 1);
+                                    break;
+                                case SKEncodedOrigin.BottomRight:
+                                    orientCanvas.Translate(originWidth, originHeight);
+                                    orientCanvas.RotateDegrees(180);
+                                    break;
+                                case SKEncodedOrigin.BottomLeft:
+                                    orientCanvas.Translate(0, originHeight);
+                                    orientCanvas.Scale(1, -1);
+                                    break;
+                                case SKEncodedOrigin.LeftTop:
+                                    orientCanvas.RotateDegrees(90);
+                                    orientCanvas.Scale(1, -1);
+                                    break;
+                                case SKEncodedOrigin.RightTop:
+                                    orientCanvas.Translate(originWidth, 0);
+                                    orientCanvas.RotateDegrees(90);
+                                    break;
+                                case SKEncodedOrigin.RightBottom:
+                                    orientCanvas.Translate(originWidth, originHeight);
+                                    orientCanvas.RotateDegrees(90);
+                                    orientCanvas.Scale(-1, 1);
+                                    break;
+                                case SKEncodedOrigin.LeftBottom:
+                                    orientCanvas.Translate(0, originHeight);
+                                    orientCanvas.RotateDegrees(-90);
+                                    break;
+                            }
+
+                            orientCanvas.DrawImage(rawImage, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                            correctedImage = orientSurface.Snapshot();
+                        }
+
+                        int width, height, drawWidth, drawHeight;
+
+                        var orientation = GetOrientation(filePath);
+                        if (orientation == ImageOrientation.Portrait)
+                        {
+                            var scale = (float)resolution / originHeight;
+                            width = (int)Math.Round(originWidth * scale);
+                            height = resolution;
+                        }
+                        else
+                        {
+                            var scale = (float)resolution / originWidth;
+                            width = resolution;
+                            height = (int)Math.Round(originHeight * scale);
+                        }
+                        
+                        drawWidth = width;
+                        drawHeight = height;
+
+                        var drawX = (int)((width - drawWidth) / 2f);
+                        var drawY = (int)((height - drawHeight) / 2f);
+
+                        using var surface = SKSurface.Create(new SKImageInfo(width, height));
+                        var canvas = surface.Canvas;
+                        canvas.Clear(SKColors.Transparent);
+                        canvas.DrawImage(correctedImage, new SKRect(drawX, drawY, drawX + drawWidth, drawY + drawHeight), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                        canvas.ClipRect(new SKRect(0, 0, width, height));
+
+                        if (!ReferenceEquals(correctedImage, rawImage))
+                        { 
+                            correctedImage.Dispose();
+                        }
+
+                        using var thumbnail = surface.Snapshot(new SKRectI(0, 0, width, height));
+                        using var data = thumbnail.Encode(SKEncodedImageFormat.Webp, 80);
+
+                        input.Flush();
+                        input.Close();
+
+                        using var output = File.Create(savePath);
+                        data.SaveTo(output);
+                        output.Flush();
                     }
 
                     return true;
@@ -100,6 +183,7 @@ namespace Memtly.Core.Helpers
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, $"Failed to generate thumbnail - '{filePath}'");
+                    File.Copy(Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly()!.Location)!, Directories.Private.Assets, $"{(mediaType == MediaType.Video ? "BrokenVideo" : "BrokenImage")}.webp"), savePath, true);
                 }
             }
 
@@ -128,47 +212,59 @@ namespace Memtly.Core.Helpers
             return MediaType.Unknown;
         }
 
-        public async Task<ImageOrientation> GetOrientation(string path)
+        public ImageOrientation GetOrientation(string path)
         {
-            var orientation = ImageOrientation.Unknown;
-
             if (_fileHelper.FileExists(path))
             {
                 try
                 {
-                    using (var img = await Image.LoadAsync(path))
-                    {
-                        orientation = this.GetOrientation(img);
-                    }
+                    using var input = File.OpenRead(path);
+                    using var codec = SKCodec.Create(input) ?? throw new InvalidOperationException("Unsupported or invalid image.");
+
+                    return GetOrientation(codec);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, $"Failed to get image orientation- '{path}'");
-                }
-            }
-
-            return orientation;
-        }
-
-        public ImageOrientation GetOrientation(Image img)
-        {
-            if (img != null)
-            {
-                if (img.Width > img.Height)
-                {
-                    return ImageOrientation.Landscape;
-                }
-                else if (img.Width < img.Height)
-                {
-                    return ImageOrientation.Portrait;
-                }
-                else if (img.Width == img.Height)
-                {
-                    return ImageOrientation.Square;
+                    _logger.LogWarning(ex, $"Failed to get image orientation - '{path}'");
                 }
             }
 
             return ImageOrientation.Unknown;
+        }
+
+        public ImageOrientation GetOrientation(SKCodec codec)
+        {
+            var (width, height) = GetDimensions(codec);
+            if (width > height)
+            {
+                return ImageOrientation.Landscape;
+            }
+            else if (width < height)
+            {
+                return ImageOrientation.Portrait;
+            }
+            else
+            {
+                return ImageOrientation.Square;
+            }
+        }
+
+        public (int, int) GetDimensions(SKCodec codec)
+        {
+            var rotated = IsRotated(codec);
+
+            var width = rotated ? codec.Info.Height : codec.Info.Width;
+            var height = rotated ? codec.Info.Width : codec.Info.Height;
+
+            return (width, height);
+        }
+
+        public bool IsRotated(SKCodec codec)
+        {
+            return codec.EncodedOrigin == SKEncodedOrigin.LeftTop ||
+                codec.EncodedOrigin == SKEncodedOrigin.RightTop ||
+                codec.EncodedOrigin == SKEncodedOrigin.LeftBottom ||
+                codec.EncodedOrigin == SKEncodedOrigin.RightBottom;
         }
 
         public DateTime? GetExifCreationDateTaken(string path)
