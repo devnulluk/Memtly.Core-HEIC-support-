@@ -4,9 +4,12 @@ import { displayPopup } from '@modules/popups';
 function init() {
     bindEventHandlers();
 
-    const pageLoadEnabled = $('body').data('identity-check');
-    if (pageLoadEnabled) {
-        displayIdentityCheck(false);
+    const path = window.location.pathname.toLowerCase();
+    if (!path.startsWith('/account/login')) {
+        const pageLoadEnabled = $('body').data('identity-check');
+        if (pageLoadEnabled) {
+            displayIdentityCheck(false);
+        }
     }
 }
 

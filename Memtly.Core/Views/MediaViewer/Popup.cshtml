@@ -8,7 +8,7 @@
             <div class="media-viewer-title">@Model.Title</div>
         }
         <div class="media-viewer-content">
-            <img class="media-viewer-image" src="@(Model.Type.Equals("Image", StringComparison.OrdinalIgnoreCase) ? Model.Source : Model.Thumbnail)" />
+            <img class="media-viewer-image" src="@(Model.Type.Equals("Image", StringComparison.OrdinalIgnoreCase) ? Model.Source : Model.Thumbnail)" onerror="this.onerror=null; this.src='/_content/Memtly.Core/images/@(Model.Type.Equals("Image", StringComparison.OrdinalIgnoreCase) ? "BrokenImage.webp" : "BrokenVideo.webp")';" />
         </div>
         <div class="media-viewer-description mt-1 mx-0">
             <div class="row">
