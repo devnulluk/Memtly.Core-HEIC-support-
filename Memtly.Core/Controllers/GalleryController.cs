@@ -441,6 +441,8 @@ namespace Memtly.Core.Controllers
                     return Json(new MediaUploadFailureResponse(request.RequestId, request.UploadId, _localizer["Invalid_Gallery_Id"].Value));
                 }
 
+                var galleryType = request.CollectionId > 0 ? GalleryType.Collection : GalleryType.Basic;
+
                 var collection = request.CollectionId > 0 ? await _database.GetGallery(request.CollectionId) : null;
                 if (request.CollectionId > 0 && collection == null)
                 {
@@ -450,7 +452,11 @@ namespace Memtly.Core.Controllers
                 var gallery = await _database.GetGallery(request.GalleryId);
                 if (gallery != null)
                 {
-                    if (!string.IsNullOrWhiteSpace(collection?.SecretKey ?? gallery.SecretKey) && !string.Equals(collection?.SecretKey ?? gallery.SecretKey, request.SecretKey))
+                    if (galleryType == GalleryType.Collection && (!string.IsNullOrWhiteSpace(collection?.SecretKey) && !string.Equals(collection?.SecretKey, request.SecretKey)))
+                    {
+                        return Json(new MediaUploadFailureResponse(request.RequestId, request.UploadId, _localizer["Invalid_Secret_Key_Warning"].Value));
+                    }
+                    else if (galleryType != GalleryType.Collection && (!string.IsNullOrWhiteSpace(gallery?.SecretKey) && !string.Equals(gallery?.SecretKey, request.SecretKey)))
                     {
                         return Json(new MediaUploadFailureResponse(request.RequestId, request.UploadId, _localizer["Invalid_Secret_Key_Warning"].Value));
                     }
@@ -516,7 +522,8 @@ namespace Memtly.Core.Controllers
                                     }
                                     else
                                     {
-                                        System.IO.File.Copy(Path.Combine(AssetsDirectory, $"DemoImage.png"), finalFilePath, true);
+                                        var mediaType = _imageHelper.GuessMediaTypeFromExtension(request.File.FileName);
+                                        System.IO.File.Copy(Path.Combine(AssetsDirectory, (mediaType == MediaType.Video ? $"DemoVideo.mp4" : $"DemoImage.png")), finalFilePath, true);
                                     }
                                 }
                                 else
@@ -645,6 +652,8 @@ namespace Memtly.Core.Controllers
                     return Json(new MediaBatchUploadFailureResponse(request.RequestId, _localizer["Invalid_Gallery_Id"].Value));
                 }
 
+                var galleryType = request.CollectionId > 0 ? GalleryType.Collection : GalleryType.Basic;
+
                 var collection = request.CollectionId > 0 ? await _database.GetGallery(request.CollectionId) : null;
                 if (request.CollectionId > 0 && collection == null)
                 {
@@ -654,7 +663,11 @@ namespace Memtly.Core.Controllers
                 var gallery = await _database.GetGallery(request.GalleryId);
                 if (gallery != null)
                 {
-                    if (!string.IsNullOrWhiteSpace(collection?.SecretKey ?? gallery.SecretKey) && !string.Equals(collection?.SecretKey ?? gallery.SecretKey, request.SecretKey))
+                    if (galleryType == GalleryType.Collection && (!string.IsNullOrWhiteSpace(collection?.SecretKey) && !string.Equals(collection?.SecretKey, request.SecretKey)))
+                    {
+                        return Json(new MediaBatchUploadFailureResponse(request.RequestId, _localizer["Invalid_Secret_Key_Warning"].Value));
+                    }
+                    else if (galleryType != GalleryType.Collection && (!string.IsNullOrWhiteSpace(gallery?.SecretKey) && !string.Equals(gallery?.SecretKey, request.SecretKey)))
                     {
                         return Json(new MediaBatchUploadFailureResponse(request.RequestId, _localizer["Invalid_Secret_Key_Warning"].Value));
                     }

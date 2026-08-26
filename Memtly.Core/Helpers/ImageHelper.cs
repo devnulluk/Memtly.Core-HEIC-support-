@@ -16,8 +16,9 @@ namespace Memtly.Core.Helpers
     public interface IImageHelper
     {
         Task<bool> GenerateThumbnail(string filePath, string savePath, int size = 720);
-        ImageOrientation GetOrientation(string path);
+        MediaType GuessMediaTypeFromExtension(string path);
         MediaType GetMediaType(string filePath);
+        ImageOrientation GetOrientation(string path);
         DateTime? GetExifCreationDateTaken(string path);
         Task<bool> DownloadFFMPEG(string path);
     }
@@ -188,6 +189,28 @@ namespace Memtly.Core.Helpers
             }
 
             return false;
+        }
+
+        public MediaType GuessMediaTypeFromExtension(string path)
+        {
+            try
+            {
+                var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".tiff", ".tif", ".ico", ".heic", ".heif", ".avif" };
+                var videoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mov", ".avi", ".wmv", ".flv", ".mkv", ".webm", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts" };
+
+                var extension = $".{Path.GetExtension(path).Trim('.')}";
+                if (imageExtensions.Contains(extension))
+                {
+                    return MediaType.Image;
+                }
+                else if (videoExtensions.Contains(extension))
+                {
+                    return MediaType.Video;
+                }
+            }
+            catch { }
+
+            return MediaType.Unknown;
         }
 
         public MediaType GetMediaType(string path)
