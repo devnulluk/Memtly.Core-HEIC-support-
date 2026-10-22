@@ -40,20 +40,15 @@ namespace Memtly.Core.Helpers
         public async Task<bool> GenerateThumbnail(string filePath, string savePath, int resolution = 720)
         {
             if (!_fileHelper.FileExists(filePath)) return false;
-
+            if (Path.GetFullPath(filePath).Equals(Path.GetFullPath(savePath), StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("A derivative must never overwrite its source.");
             var originalPath = filePath;
             string? temporaryDecodedPath = null;
             var mediaType = MediaType.Unknown;
-
             try
             {
                 mediaType = GetMediaType(originalPath);
-                if (mediaType == MediaType.Unknown)
-                    mediaType = GuessMediaTypeFromExtension(originalPath);
-
-                if (mediaType != MediaType.Image && mediaType != MediaType.Video)
-                    return true;
-
+                if (mediaType != MediaType.Image && mediaType != MediaType.Video) return false;
                 if (mediaType == MediaType.Video)
                 {
                     if (!FfmpegInstalled)
@@ -61,19 +56,9 @@ namespace Memtly.Core.Helpers
                         _logger.LogWarning(_localizer["FFMPEG_Downloading"].Value);
                         return false;
                     }
-
-                    try
-                    {
-                        var conversion = await FFmpeg.Conversions.FromSnippet.Snapshot(originalPath, savePath, TimeSpan.Zero);
-                        await conversion.Start();
-                        filePath = savePath;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, $"Failed to grab thumbnail frame from video - '{originalPath}' - {ex.Message}");
-                        File.Copy(Path.Combine(Path.GetDirectoryName(Assembly.GetEntryAssembly()!.Location)!, Directories.Private.Assets, "BrokenVideo.webp"), savePath, true);
-                        return false;
-                    }
+                    var conversion = await FFmpeg.Conversions.FromSnippet.Snapshot(originalPath, savePath, TimeSpan.Zero);
+                    await conversion.Start();
+                    filePath = savePath;
                 }
                 else if (HeifHelper.IsHeif(originalPath))
                 {
@@ -85,47 +70,53 @@ namespace Memtly.Core.Helpers
 
                 using var input = File.OpenRead(filePath);
                 using var codec = SKCodec.Create(input, out _) ?? throw new InvalidOperationException("Unsupported or invalid image.");
+                // Reject unreasonable dimensions before allocating decoded pixel buffers.
+                // This limits previews only; the uploaded original remains untouched.
+                if (codec.Info.Width < 1 || codec.Info.Height < 1 ||
+                    (long)codec.Info.Width * codec.Info.Height > 64_000_000)
+                    throw new InvalidOperationException("Preview exceeds the 64 megapixel decoding limit.");
                 using var rawBitmap = new SKBitmap(codec.Info);
                 var decodeResult = codec.GetPixels(codec.Info, rawBitmap.GetPixels());
                 if (decodeResult != SKCodecResult.Success)
                     throw new InvalidOperationException($"Pixel decode failed: {decodeResult}");
                 using var rawImage = SKImage.FromBitmap(rawBitmap);
-
                 var (originWidth, originHeight) = GetDimensions(codec);
                 SKImage correctedImage = rawImage;
                 SKSurface? orientationSurface = null;
-                if (codec.EncodedOrigin != SKEncodedOrigin.TopLeft)
+                try
                 {
-                    orientationSurface = SKSurface.Create(new SKImageInfo(originWidth, originHeight));
-                    var c = orientationSurface.Canvas;
-                    c.Clear(SKColors.Transparent);
-                    switch (codec.EncodedOrigin)
+                    if (codec.EncodedOrigin != SKEncodedOrigin.TopLeft)
                     {
-                        case SKEncodedOrigin.TopRight: c.Translate(originWidth, 0); c.Scale(-1, 1); break;
-                        case SKEncodedOrigin.BottomRight: c.Translate(originWidth, originHeight); c.RotateDegrees(180); break;
-                        case SKEncodedOrigin.BottomLeft: c.Translate(0, originHeight); c.Scale(1, -1); break;
-                        case SKEncodedOrigin.LeftTop: c.RotateDegrees(90); c.Scale(1, -1); break;
-                        case SKEncodedOrigin.RightTop: c.Translate(originWidth, 0); c.RotateDegrees(90); break;
-                        case SKEncodedOrigin.RightBottom: c.Translate(originWidth, originHeight); c.RotateDegrees(90); c.Scale(-1, 1); break;
-                        case SKEncodedOrigin.LeftBottom: c.Translate(0, originHeight); c.RotateDegrees(-90); break;
+                        orientationSurface = SKSurface.Create(new SKImageInfo(originWidth, originHeight))
+                            ?? throw new InvalidOperationException("Could not allocate an orientation surface.");
+                        var c = orientationSurface.Canvas;
+                        c.Clear(SKColors.Transparent);
+                        switch (codec.EncodedOrigin)
+                        {
+                            case SKEncodedOrigin.TopRight: c.Translate(originWidth, 0); c.Scale(-1, 1); break;
+                            case SKEncodedOrigin.BottomRight: c.Translate(originWidth, originHeight); c.RotateDegrees(180); break;
+                            case SKEncodedOrigin.BottomLeft: c.Translate(0, originHeight); c.Scale(1, -1); break;
+                            case SKEncodedOrigin.LeftTop: c.RotateDegrees(90); c.Scale(1, -1); break;
+                            case SKEncodedOrigin.RightTop: c.Translate(originWidth, 0); c.RotateDegrees(90); break;
+                            case SKEncodedOrigin.RightBottom: c.Translate(originWidth, originHeight); c.RotateDegrees(90); c.Scale(-1, 1); break;
+                            case SKEncodedOrigin.LeftBottom: c.Translate(0, originHeight); c.RotateDegrees(-90); break;
+                        }
+                        c.DrawImage(rawImage, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                        correctedImage = orientationSurface.Snapshot();
                     }
-                    c.DrawImage(rawImage, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
-                    correctedImage = orientationSurface.Snapshot();
+                    await EncodeScaledWebp(correctedImage, originWidth, originHeight, savePath, resolution, 80);
+                    if (HeifHelper.IsHeif(originalPath))
+                    {
+                        var displayPath = Path.Combine(Path.GetDirectoryName(savePath)!, $"{Path.GetFileNameWithoutExtension(savePath)}.display.webp");
+                        await EncodeScaledWebp(correctedImage, originWidth, originHeight, displayPath, 3840, 95, onlyDownscale: true);
+                    }
+                    return true;
                 }
-
-                await EncodeScaledWebp(correctedImage, originWidth, originHeight, savePath, resolution, 80);
-
-                // HEIC/HEIF masters remain untouched. A larger WebP beside the thumbnail is
-                // used by browsers for the lightbox/full-screen view.
-                if (HeifHelper.IsHeif(originalPath))
+                finally
                 {
-                    var displayPath = Path.Combine(Path.GetDirectoryName(savePath)!, $"{Path.GetFileNameWithoutExtension(savePath)}.display.webp");
-                    await EncodeScaledWebp(correctedImage, originWidth, originHeight, displayPath, 3840, 95, onlyDownscale: true);
+                    if (!ReferenceEquals(correctedImage, rawImage)) correctedImage.Dispose();
+                    orientationSurface?.Dispose();
                 }
-
-                if (!ReferenceEquals(correctedImage, rawImage)) correctedImage.Dispose();
-                orientationSurface?.Dispose();
-                return true;
             }
             catch (Exception ex)
             {
@@ -137,29 +128,36 @@ namespace Memtly.Core.Helpers
                 catch { }
                 return false;
             }
-            finally
-            {
-                HeifHelper.TryDelete(temporaryDecodedPath);
-            }
+            finally { HeifHelper.TryDelete(temporaryDecodedPath); }
         }
 
         private static async Task EncodeScaledWebp(SKImage image, int sourceWidth, int sourceHeight, string savePath, int maxDimension, int quality, bool onlyDownscale = false)
         {
+            maxDimension = Math.Clamp(maxDimension, 1, 8192);
             var longest = Math.Max(sourceWidth, sourceHeight);
             var scale = longest > 0 ? (float)maxDimension / longest : 1f;
             if (onlyDownscale && scale > 1f) scale = 1f;
             var width = Math.Max(1, (int)Math.Round(sourceWidth * scale));
             var height = Math.Max(1, (int)Math.Round(sourceHeight * scale));
-
-            Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
-            using var surface = SKSurface.Create(new SKImageInfo(width, height));
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+            using var surface = SKSurface.Create(new SKImageInfo(width, height))
+                ?? throw new InvalidOperationException("Could not allocate a preview surface.");
             surface.Canvas.Clear(SKColors.Transparent);
             surface.Canvas.DrawImage(image, new SKRect(0, 0, width, height), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
             using var outputImage = surface.Snapshot();
-            using var data = outputImage.Encode(SKEncodedImageFormat.Webp, quality);
-            await using var output = File.Create(savePath);
-            data.SaveTo(output);
-            await output.FlushAsync();
+            using var data = outputImage.Encode(SKEncodedImageFormat.Webp, quality)
+                ?? throw new InvalidOperationException("Could not encode the preview.");
+            var temporary = savePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await using (var output = File.Create(temporary))
+                {
+                    data.SaveTo(output);
+                    await output.FlushAsync();
+                }
+                File.Move(temporary, savePath, overwrite: true);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
 
         public MediaType GuessMediaTypeFromExtension(string path)
@@ -221,15 +219,12 @@ namespace Memtly.Core.Helpers
             var (width, height) = GetDimensions(codec);
             return width > height ? ImageOrientation.Landscape : width < height ? ImageOrientation.Portrait : ImageOrientation.Square;
         }
-
         public (int, int) GetDimensions(SKCodec codec)
         {
             var rotated = IsRotated(codec);
             return (rotated ? codec.Info.Height : codec.Info.Width, rotated ? codec.Info.Width : codec.Info.Height);
         }
-
         public bool IsRotated(SKCodec codec) => codec.EncodedOrigin == SKEncodedOrigin.LeftTop || codec.EncodedOrigin == SKEncodedOrigin.RightTop || codec.EncodedOrigin == SKEncodedOrigin.LeftBottom || codec.EncodedOrigin == SKEncodedOrigin.RightBottom;
-
         public DateTime? GetExifCreationDateTaken(string path)
         {
             try
@@ -249,7 +244,6 @@ namespace Memtly.Core.Helpers
             catch (Exception ex) { _logger.LogWarning(ex, $"Failed to get image EXIF creation datetime - '{path}'"); }
             return null;
         }
-
         public async Task<bool> DownloadFFMPEG(string path)
         {
             try
